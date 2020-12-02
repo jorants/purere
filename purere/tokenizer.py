@@ -39,11 +39,12 @@ def parse_group(regexp,groupcount):
     """
     returns a token (often of type Group) and the new group count
     """
+    
     if regexp[0] != '?':
         # normal group, no extentions
         # parse the subexpression 
         tree,parsed,groupcount = token_tree(regexp,groupcount+1)
-        token = Group(groupcount,tree)
+        token = Group(groupcount-1,tree)
         return token,parsed,groupcount
     else:
         raise ValueError("Grouptype not implemented yet")

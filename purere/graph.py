@@ -36,7 +36,11 @@ class Vertex:
             
 
 class Automaton:
-    def __init__(self,start,end,vertices):
+    def __init__(self,start,end,vertices,groups = None):
         self.start = start
         self.end = end
         self.vertices = vertices
+        if groups:
+            self.groups = groups
+        else:
+            self.groups = {'count':0,'names':[]}
