@@ -2,7 +2,8 @@ Purere
 ======
 
 Purere is a python regex libary written fully in python without any standard libary dependencies.
-It is still in early development, the eventual goal is to be a drop-in replacement for re.
+This libary is in early development, and has been worded on for only two days.
+The eventual goal is to be a drop-in replacement for re.
 
 Suported:
  Matching ASCII strings
