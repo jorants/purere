@@ -4,7 +4,7 @@ The output is compared to the native implementation.
 """
 
 import re
-from pyre import matcher
+from purere import matcher
 import pytest
 
 raw_testdata = {

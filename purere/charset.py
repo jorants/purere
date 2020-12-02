@@ -95,7 +95,7 @@ special_sets_lookup = {
     'W':NOTWORD,
 }
 
-simple_char_escape_lookup = { c:c for c in ".^$*+?{}[]\|()"} 
+simple_char_escape_lookup = { c:c for c in ".^$*+?{}[]|()"} 
 special_char_escape_lookup = {repr(c)[2:-1]:c for c in "\'\"\\\n\r\t\b\f\a\v"}
 escape_lookup = {**special_sets_lookup,** simple_char_escape_lookup , ** special_char_escape_lookup}
 

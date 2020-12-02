@@ -1,4 +1,4 @@
-from pyre import __version__
+from purere import __version__
 
 
 def test_version():
