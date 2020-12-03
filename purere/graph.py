@@ -7,7 +7,7 @@ class Vertex:
         # special edges is anythging that does not eat a character, for examplea free edge or ^
         # When they are walked we should also stay
         self.special_edges = []
-
+        
     def add_char_edge(self,charset,vertex):
         self.char_edges.append([charset,vertex])
 
@@ -40,7 +40,4 @@ class Automaton:
         self.start = start
         self.end = end
         self.vertices = vertices
-        if groups:
-            self.groups = groups
-        else:
-            self.groups = {'count':0,'names':[]}
+        self.groups = groups

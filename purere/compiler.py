@@ -46,12 +46,8 @@ class Alternatives(AST):
             autos.append(auto)
 
         vertices = [start,end]+ [v for a in autos for v in a.vertices]
-        groups = {
-            'count': sum(a.groups['count'] for a in autos),
-            'names': [name for a in autos for name in a.groups['names']],
-        }
-        
-        return Automaton(start,end,vertices,groups)
+
+        return Automaton(start,end,vertices)
     
 
 class Optional(AST):
@@ -66,7 +62,7 @@ class Optional(AST):
         start = Vertex(number)
         end = Vertex(number+1)
         repauto = self.value.automaton(number+2)
-        if not self.greedy:
+        if self.greedy:
             # first try repauto
             start.add_special_edge("free",repauto.start)
             start.add_special_edge("free",end)
@@ -75,7 +71,7 @@ class Optional(AST):
             start.add_special_edge("free",repauto.start)
             
         repauto.end.add_special_edge("free",end)
-        return Automaton(start,end,[start,end]+repauto.vertices,repauto.groups)
+        return Automaton(start,end,[start,end]+repauto.vertices)
     
 class Unlimited(AST):
     def __init__(self,value,greedy=False):
@@ -89,8 +85,7 @@ class Unlimited(AST):
         start = Vertex(number)
         end = Vertex(number+1)
         repauto = self.value.automaton(number+2)
-        if not self.greedy:
-            # TODO: figure out why this is the wrong way around?
+        if self.greedy:
             # first try a repeat
             start.add_special_edge("free",repauto.start)
             start.add_special_edge("free",end)
@@ -99,11 +94,11 @@ class Unlimited(AST):
             start.add_special_edge("free",repauto.start)
             
         repauto.end.add_special_edge("free",start)
-        return Automaton(start,end,[start,end]+repauto.vertices,repauto.groups)
+        return Automaton(start,end,[start,end]+repauto.vertices)
 
     
 class Repeat(AST):
-    def __init__(self,value,lower,upper,greedy = False):
+    def __init__(self,value,lower,upper,greedy = True):
         self.value = value
         self.lower = lower
         self.upper = upper
@@ -172,13 +167,8 @@ class Concat(AST):
             
         start = autos[0].start
         end = autos[-1].end
-        vertices = [v for a in autos for v in a.vertices]
-        groups = {
-            'count': sum(a.groups['count'] for a in autos),
-            'names': [name for a in autos for name in a.groups['names']],
-        }
-        
-        return Automaton(start,end,vertices,groups)
+        vertices = [v for a in autos for v in a.vertices]        
+        return Automaton(start,end,vertices)
     
         
 class InputCheck(AST):
@@ -240,7 +230,7 @@ class CapturingGroup(AST):
         self.name = name
 
     def __str__(self,indent = 0):
-        return " "*indent+f"CapturingGroup({self.number}{','+self.name if self.name else ''}):\n"+self.value.__str__(indent=indent+1)
+        return " "*indent+f"CapturingGroup({self.index}{','+self.name if self.name else ''}):\n"+self.value.__str__(indent=indent+1)
 
     def simplify(self):
         # no simplifications, just pass it on
@@ -251,14 +241,10 @@ class CapturingGroup(AST):
         start = Vertex(number)
         end = Vertex(number+1)
         subauto = self.value.automaton(number+2)
-        start.add_special_edge("start_capture",subauto.start,config = {'number':self.index,'name':self.name})
-        subauto.end.add_special_edge("end_capture",end,config = {'number':self.index,'name':self.name})
+        start.add_special_edge("start_capture",subauto.start,config = self.index)
+        subauto.end.add_special_edge("end_capture",end,config = self.index)
         
-        groups = {
-            'count': subauto.groups['count'] + 1,
-            'names': subauto.groups['names'] + [self.name] if self.name else subauto.groups['names']
-        }
-        return  Automaton(start,end,[start,end]+subauto.vertices,groups)
+        return  Automaton(start,end,[start,end]+subauto.vertices)
     
     
     
@@ -297,9 +283,9 @@ def ast_for_tokentree(tree):
                 # TODO: is this needed?
                 raise ValueError("Repetition operator can not be aplied to ^ or $")
             if isinstance(torepeat,Repeat):
-                if token == tokenizer._OPTIONAL and not torepeat.greedy:
+                if token == tokenizer._OPTIONAL and torepeat.greedy:
                     # The ? denoted a non greedy repetition
-                    torepeat.greedy = True
+                    torepeat.greedy = False
                     currentparts.append(torepeat)
                     continue
                 else:
@@ -337,21 +323,15 @@ def get_ast(regexp):
     """
     Creates an AST from a regexp by first converting to a tree of groups and tokens, and then applying the Shunting-yard algorithm
     """        
-    tree,length,groupcount = tokenizer.token_tree(regexp)
+    tree,length,groupcount,groupnames = tokenizer.token_tree(regexp)
     if length != len(regexp):
         raise ValueError("Found ')' without matching '('")
-    return ast_for_tokentree(tree)
-
+    return ast_for_tokentree(tree), groupcount, groupnames
 
 def get_automaton(regexp):
-    if isinstance(regexp,str):
-        tree = get_ast(regexp)
-    else:
-        tree = regexp
-    
+    tree,groupcount,groupnames = get_ast(regexp)
     tree = tree.simplify()
     auto = tree.automaton(0)
-    if len(auto.groups['names']) != len(set(auto.groups['names'])):
-        raise ValueError("Some group name is used twice")
+    auto.groups = {'count':groupcount,'names':groupnames}
     return auto
 

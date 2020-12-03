@@ -6,16 +6,15 @@ This libary is in early development, and has been worded on for only two days.
 The eventual goal is to be a drop-in replacement for re.
 
 Suported:
- Matching ASCII strings
+- Matching ASCII strings
 - Charcter groups using `[` and `]`
 - Escape sequences 
-- Non-capturing grouping using `(` and `)`
+- Non-capturing grouping using `(?:...)`
 - Repetition using `*`, `+`, `?` and `{min,max}`
 - `$` and `^`
+- Capturing groups 
 
 Wishlist:
-- Capturing groups
-- Unanchoured searching
 - Setting of options like ASCII or IGNORECASE
 - Interface similair to python's `re`
 - Suport for `\A`, `\Z`, `\b`, `\B`

@@ -35,17 +35,22 @@ class Group():
         self.name = name
 
 
-def parse_group(regexp,groupcount):
+def parse_group(regexp, groupcount, groupnames):
     """
     returns a token (often of type Group) and the new group count
     """
-    
     if regexp[0] != '?':
         # normal group, no extentions
-        # parse the subexpression 
-        tree,parsed,groupcount = token_tree(regexp,groupcount+1)
-        token = Group(groupcount-1,tree)
-        return token,parsed,groupcount
+        # parse the subexpression
+        groupcount_to_set = groupcount
+        tree,parsed,groupcount, groupnames = token_tree(regexp,groupcount+1,groupnames)
+        token = Group(groupcount_to_set,tree)
+        return token,parsed,groupcount, groupnames
+    elif regexp[1] == ":":
+        # non capturing group
+        tree,parsed,groupcount, groupnames = token_tree(regexp[2:],groupcount,groupnames)
+        token = Group(None,tree)
+        return token,parsed+1,groupcount,groupnames
     else:
         raise ValueError("Grouptype not implemented yet")
     
@@ -110,7 +115,6 @@ def find_end_of_charset(regexp,i):
     inescape = False
     j = i+1
     while j<len(regexp):
-        
         c = regexp[j]
         if not inescape:
             # We are not after a '\', interpet the character
@@ -128,7 +132,7 @@ def find_end_of_charset(regexp,i):
     # j is now the position of the matching ']'
     return j
 
-def token_tree(regexp,groupcount = 0):
+def token_tree(regexp,groupcount = 0,groupnames = {}):
     """
     First pass over the regexp. Converts string to tokens, and builds a tree consisting of groups and character sets.
     Returns the (sub)tree, the number of characters parsed (when ended by ')' this is not included), and the number of groups
@@ -153,7 +157,7 @@ def token_tree(regexp,groupcount = 0):
         elif c == '(':
             # start of new group
             subregexp = regexp[i+1:]
-            token,parsed,groupcount = parse_group(subregexp,groupcount)
+            token,parsed,groupcount,groupnames = parse_group(subregexp,groupcount,groupnames)
             
             if parsed == len(subregexp):
                 raise ValueError("Unmatched '('")
@@ -162,7 +166,7 @@ def token_tree(regexp,groupcount = 0):
             i+= 2+parsed        
         elif c == ')':
             # end of current group
-            return result,i,groupcount
+            return result,i,groupcount,groupnames
         elif c == ']':
             # should not find the end of a character group, something wrong.
             raise ValueError("Found ']' without matching '['")
@@ -186,6 +190,6 @@ def token_tree(regexp,groupcount = 0):
             result.append(charset.CharIndividual(c))
             i+=1
         
-    return result,i,groupcount
+    return result,i,groupcount, groupnames
 
 

@@ -1,56 +1,21 @@
 from . import compiler
 
-
-
 def getnewgroups_start(groups,pos,index,name = None):
     # it is important here that we rebuild the dict since other states need to keep their dict
-    if not name is None:
-        newgroups = {
-            'byindex': [groupset for groupset in groups['byindex']],
-            'byname':  {name: groupset for name,groupset in groups['byname'].items()},
-        }
-        # Add to the list, do not append or use +=
-        newgroups['byindex'][index] = newgroups['byindex'][index] + [(pos,None)]
-        newgroups['byname'][name] = newgroups['byname'][name] + [(pos,None)]
-    else:
-        newgroups = {
-            'byindex': [groupset for groupset in groups['byindex']],
-            'byname':  groups['byname']
-        }
-        # Add to the list, do not append or use +=
-        newgroups['byindex'][index] = newgroups['byindex'][index] + [(pos,None)]
+    newgroups = [groupset for groupset in groups]
+    # Add to the list, do not append or use +=
+    newgroups[index] = newgroups[index] + [(pos,None)]
     return newgroups
 
 def getnewgroups_end(groups,pos,index,name = None):
     # it is important here that we rebuild the dict since other states need to keep their dict
-    if not name is None:
-        newgroups = {
-            'byindex': [groupset for groupset in groups['byindex']],
-            'byname':  {name: groupset for name,groupset in groups['byname'].items()},
-        }
-        # Add to the list, do not append or use +=
-        last = newgroups['byindex'][index][-1]
-        if not last[1] is None:
-            raise Exception("Sainity check on groups failed")
-        newgroups['byindex'][index] = newgroups['byindex'][index][:-1] + [(last[0],pos)]
-
-        last = newgroups['byname'][name][-1]
-        if not last[1] is None:
-            raise Exception("Sainity check on groups failed")
-        newgroups['name'][name] = newgroups['byname'][name][:-1] + [(last[0],pos)]
-        return newgroups
-    else:
-        newgroups = {
-            'byindex': [groupset for groupset in groups['byindex']],
-            'byname':  groups['byname']
-        }
-        # Add to the list, do not append or use +=
-        last = newgroups['byindex'][index][-1]
-        if not last[1] is None:
-            raise Exception("Sainity check on groups failed")
-        newgroups['byindex'][index] = newgroups['byindex'][index][:-1] + [(last[0],pos)]
-
-        return newgroups
+    newgroups = [groupset for groupset in groups]
+    # Add to the list, do not append or use +=
+    last = newgroups[index][-1]
+    if not last[1] is None:
+        raise Exception("Sainity check on groups failed")
+    newgroups[index] = newgroups[index][:-1] + [(last[0],pos)]
+    return newgroups
         
 class State:
     """
@@ -88,11 +53,11 @@ class State:
                 if not(localchars[1] == None or localchars[1] == '\n'):
                     continue
             elif typ == "start_capture":
-                newgroups = getnewgroups_start(self.groups,i,config['number'],config['name'])
+                newgroups = getnewgroups_start(self.groups,i,config)
                 newstate = State(neigh,newgroups)
                 
             elif typ == "end_capture":
-                newgroups = getnewgroups_end(self.groups,i,config['number'],config['name'])
+                newgroups = getnewgroups_end(self.groups,i,config)
                 newstate = State(neigh,newgroups)                
             else:
                  raise Exception(f"Unknown special edge type {typ}")
@@ -176,39 +141,102 @@ class StateSet:
         
     def __str__(self):
         return (" ".join(str(s.vertex.number) for s in self.inorder))
+
+
+def run_automaton(automaton,string):
+    """
+    Runs an automaton on a string.
+    Returns None if the string is rejected, returns a Match object is the string is accepted.
+    """
+    matchedgroups =  [[] for i in range(automaton.groups['count'])]
+
+    stateset = StateSet([State(automaton.start,matchedgroups)])
+
+    for i in range(len(string)):
+        # we only read each character once
+        # we start with all special edges, since these do not take a char.
         
-class Pattern():
-    def __init__(self,regexp):
-        self.regexp = regexp
-        self.automaton = compiler.get_automaton(regexp)
-        
-    def matches(self,s):
-        # returns true or false if the string matches exaclty
-        matchedgroups = {
-            'byindex':[[] for i in range(self.automaton.groups['count'])],
-            'byname':{name: [] for name in self.automaton.groups['names']}
-        }
-
-        stateset = StateSet([State(self.automaton.start,matchedgroups)])
-
-        for i in range(len(s)):
-            # we only read each character once
-            # we start with all special edges, since these do not take a char.
-
-            stateset.expand_special_edges(s,i)
-            stateset.expand_char_edges(s[i])
-            if not stateset.existing:
-                # no more paths left
-                return False
+        stateset.expand_special_edges(string,i)
+        stateset.expand_char_edges(string[i])
+        if not stateset.existing:
+            # no more paths left
+            return None
             
 
-        stateset.expand_special_edges(s,len(s))
+    stateset.expand_special_edges(string,len(string))
+    for state in stateset.inorder:
+        if state.vertex.number == automaton.end.number:
+            return Match(string,state.groups,automaton.groups)
+    return None
+    
 
-        # because the hash of a state is equivalent to the hash of the number this works:
+class Match():
+    def __init__(self,string,matches,groupinfo):
+        self.string = string
+        self.matches = matches
+        self.groupnames = groupinfo['names']
 
-        for s in stateset.inorder:
-            if s.vertex.number == self.automaton.end.number:
-                print(s.groups)
-                return True
+    def group(self,*args):
+        if len(args) == 0:
+            args = [0]
+            
+        if len(args) == 1:
+            return self[args[0]]
+        else:
+            return tuple(self[a] for a in args)
 
-        return False
+    def all_group_positions(self,index):
+        if isinstance(index,str):
+            index = self.groupnames[index]
+        return self.matches[index]
+    
+    def all_group_matches(self,index):
+        return tuple(
+            self.string[interval[0]:interval[1]]
+            for interval in self.all_group_positions(index))
+            
+    def groups(self,default = None):
+        if len(self.matches) <= 1:
+            return tuple()
+        if len(self.matches) == 2:
+            return tuple([self.group(1)])
+        else:
+            indices = list(range(1,len(self.matches)))
+            return tuple((r if not r is None else default) for r in self.group(*indices))
+        
+    def __getitem__(self,index):
+        if isinstance(index,str):
+            index = self.groupnames[index]
+        if not self.matches[index]:
+            return None
+        
+        interval = self.matches[index][-1]
+        return self.string[interval[0]:interval[1]]
+        
+    
+class Pattern():
+    def __init__(self,regexp):
+        self.fullmatch_regexp = "("+regexp+")"
+        self.fullmatch_automaton = compiler.get_automaton(self.fullmatch_regexp)
+
+        self.match_regexp = "("+regexp+").*"
+        self.match_automaton = compiler.get_automaton(self.fullmatch_regexp)
+        
+        self.search_regexp = ".*?("+regexp+").*"
+        self.search_automaton = compiler.get_automaton(self.fullmatch_regexp)
+
+        self.findall_regexp = ".*?(?:("+regexp+").*?)*"
+        self.findall_automaton = compiler.get_automaton(self.fullmatch_regexp)
+        
+    def fullmatch(self,s):
+        return run_automaton(self.fullmatch_automaton,s)
+    
+    def match(self,s):
+        return run_automaton(self.match_automaton,s)
+
+    def match(self,s):
+        return run_automaton(self.search_automaton,s)
+        
+    def findall(self,s):
+        pass
+        #return run_automaton(self.search_automaton,s)
