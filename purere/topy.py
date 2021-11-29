@@ -133,7 +133,6 @@ def literals_to_cond(code, i, flags=0):
         elif opcode is ANY_ALL:
             conditions.append("True")
         elif opcode is ANY:
-            # TODO: Should this also not match other newlines?
             conditions.append(f"{val} != {ctopy(10)}")
         elif opcode is BIGCHARSET:
             numchunks = code[i]

@@ -1,13 +1,14 @@
 from . import compiler
 from . import topy
 from . import constants
+# needed for template parsing
 import sre_parse
 
-# Used for groupindex to make it non-modifiable
+# Used for groupindex to make it non-modifiable as required by some re tests, maybe just drop this and remove the test?
 try:
     from types import MappingProxyType
 except ImportError:
-
+    # Require as little as possible from stdlib
     class MappingProxyType(dict):
         def __setattr__(self, *args):
             raise TypeError("Not alowed to change")
@@ -337,12 +338,6 @@ error = constants.error
 
 # ---------------------------------------- CODE FROM re.py -----------------------
 # with only slight modifications to remove stuff defined above
-import enum
-
-try:
-    import _locale
-except ImportError:
-    _locale = None
 
 
 # public symbols
@@ -376,9 +371,10 @@ __all__ = [
     "DOTALL",
     "VERBOSE",
     "UNICODE",
+    "STRICTUNI",
 ]
 
-
+import enum
 class RegexFlag(enum.IntFlag):
     ASCII = A = constants.SRE_FLAG_ASCII  # assume ascii "locale"
     IGNORECASE = I = constants.SRE_FLAG_IGNORECASE  # ignore case
@@ -531,17 +527,18 @@ def escape(pattern):
         return pattern.translate(_special_chars_map).encode("latin1")
 
 
-# register myself for pickling
+# register myself for pickling if possible
 
-import copyreg
+try:
+    import copyreg
+except ImportError:
+    pass
+else:
+    def _pickle(p):
+        return _compile, (p.pattern, p.flags)
+    copyreg.pickle(Pattern, _pickle, _compile)
 
 
-def _pickle(p):
-    return _compile, (p.pattern, p.flags)
-
-
-copyreg.pickle(Pattern, _pickle, _compile)
-
-
+# not (yet) supported
 class Scanner:
     pass
