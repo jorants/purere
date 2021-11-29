@@ -1,337 +1,202 @@
-"""
-Second step in compilation, takes a tokentree and compiles it to an AST.
-AST nodes can compile themselfs into an automaton
-"""
-from . import charset
-from . import tokenizer
-from .graph import Vertex,Automaton
+from .proccess import compile_without_repeat, info_len, combine_literals
+from .constants import *
+from .constants import _NamedIntConstant
+from .dis import dis
+from . import topy
 
 
-class AST:
-    # each AST node has a simplify and an automaton function
-    def simplify(self):
-        return self
-    
-class Alternatives(AST):
-    def __init__(self,alternatives):
-        self.alternatives = alternatives
+def iter_jump_locations(code):
+    for i, opcode in enumerate(code):
+        if opcode is ABS_JUMP:
+            yield code[i + 1]
+        elif opcode is LS_BRANCH:
+            yield from code[i + 1]
+        elif opcode is ABS_GROUPREF_EXISTS:
+            yield code[i + 2]
 
-    def __str__(self,indent = 0):
-        res = [" "*indent+"Alternatives:"]+[a.__str__(indent=indent+1) for a in self.alternatives]
-        return "\n".join(res)
 
-    def simplify(self):
-        self.alternatives = [a.simplify() for a in self.alternatives]
-        newalternatives = []
-        for a in self.alternatives:
-            if isinstance(a,Alternatives):
-                newalternatives += a.alternatives
-            else:
-                newalternatives.append(a)
-        self.alternatives = newalternatives
-        return self
+def absolute_jump_locations(code):
+    # changes code to have absolute jumps and branch to have a list of arguments
+    # Two new opcodes are introduced for this ABS_JUMP and LS_BRANCH
+    itt = enumerate(code)
+    for i, opcode in itt:
+        if opcode is JUMP:
+            _, reljump = next(itt)
+            code[i] = ABS_JUMP
+            code[i + 1] = i + 1 + reljump
+        elif opcode is BRANCH:
+            loc = i + 1 + code[i + 1]
+            locations = [loc]
+            while not code[loc] is FAILURE:
+                loc = loc + code[loc]
+                locations.append(loc)
+            code[i] = LS_BRANCH
+            code[i + 1] = locations[:-1]  # leave out the final FAILURE
+            for l in locations:
+                code[l] = NOP
+        elif opcode is GROUPREF_EXISTS:
+            _, groupnum = next(itt)
+            j, reljump = next(itt)
+            code[i] = ABS_GROUPREF_EXISTS
+            code[j] = j + reljump - 1
+    return code
 
-    def automaton(self,number):
-        start = Vertex(number)
-        end = Vertex(number+1)
-        number += 2
-        autos = []
-        
 
-        for alt in self.alternatives:
-            auto = alt.automaton(number)
-            number += len(auto.vertices)
-            start.add_special_edge("free",auto.start)
-            auto.end.add_special_edge("free",auto.end)
-            autos.append(auto)
+def remap_jumps(code, mapping):
+    for i, opcode in enumerate(code):
+        if opcode is ABS_JUMP:
+            code[i + 1] = mapping[code[i + 1]]
+        elif opcode is LS_BRANCH:
+            code[i + 1] = [mapping[v] for v in code[i + 1]]
+        elif opcode is ABS_GROUPREF_EXISTS:
+            code[i + 2] = mapping[code[i + 2]]
+    return code
 
-        vertices = [start,end]+ [v for a in autos for v in a.vertices]
 
-        return Automaton(start,end,vertices)
-    
+def code_to_parts(code):
+    # Trnasform into absolute jumps before we start cutting things up
+    code = absolute_jump_locations(code)
+    # Places we need to cut as we need to jump there
+    jump_locations = sorted(list(set(iter_jump_locations(code))))
+    intervals = [
+        (a, b)
+        for a, b in zip([0] + jump_locations, jump_locations + [len(code)])
+        if a != b
+    ]
+    # we will eventually number by the parts, not code location, so keep te mapping between those two representations
+    jump2parts = {loc: i for i, loc in enumerate(a for a, b in intervals)}
+    parts2jump = {
+        i: [loc] for i, loc in enumerate(a for a, b in intervals)
+    }  # will eventually contain multiple jump
+    parts = [code[a:b] for a, b in intervals]
 
-class Optional(AST):
-    def __init__(self,value,greedy=False):
-        self.value = value
-        self.greedy = greedy
+    # now that we have the code blocks and a mapping of jumps we kan remove all nops,but first combine literals:
+    parts = [combine_literals(part) for part in parts]
+    parts = [[c for c in code if not c is NOP] for code in parts]
 
-    def __str__(self,indent = 0):
-        return " "*indent+f"Optional:\n"+self.value.__str__(indent=indent+1)
-
-    def automaton(self,number):       
-        start = Vertex(number)
-        end = Vertex(number+1)
-        repauto = self.value.automaton(number+2)
-        if self.greedy:
-            # first try repauto
-            start.add_special_edge("free",repauto.start)
-            start.add_special_edge("free",end)
+    # some parts are simply a jump to another part, we should take those out and point to target
+    # Some might have become nothing more than NOP opperations, take those out as well and point to next one
+    for partnum, part in enumerate(parts):
+        if len(part) == 2 and part[0] is ABS_JUMP:
+            newpartnum = jump2parts[part[1]]
+        elif len(part) == 0 and partnum + 1 < len(parts):
+            newpartnum = partnum + 1
         else:
-            start.add_special_edge("free",end)
-            start.add_special_edge("free",repauto.start)
-            
-        repauto.end.add_special_edge("free",end)
-        return Automaton(start,end,[start,end]+repauto.vertices)
-    
-class Unlimited(AST):
-    def __init__(self,value,greedy=False):
-        self.value = value
-        self.greedy = greedy
-        
-    def __str__(self,indent = 0):
-        return " "*indent+f"Unlimited:\n"+self.value.__str__(indent=indent+1)
+            continue
 
-    def automaton(self,number):       
-        start = Vertex(number)
-        end = Vertex(number+1)
-        repauto = self.value.automaton(number+2)
-        if self.greedy:
-            # first try a repeat
-            start.add_special_edge("free",repauto.start)
-            start.add_special_edge("free",end)
+        oldjumpnums = parts2jump[partnum]
+        for jn in oldjumpnums:
+            jump2parts[jn] = newpartnum
+        parts2jump[newpartnum] += oldjumpnums
+
+    # Now we ave the new mappings set we are done with parts2jumps so we do not need to update is
+    # we do still need jumps2part
+    new_names = {oldname: i for i, oldname in enumerate(set(jump2parts.values()))}
+    parts = [part for i, part in enumerate(parts) if i in new_names]
+    jump2parts = {j: new_names[p] for j, p in jump2parts.items()}
+
+    # with the cleaning out of the way we can remap jumps and branches so the point at parts instead of codelins
+    parts = [remap_jumps(code, jump2parts) for code in parts]
+    return parts
+
+
+def parse_info(code, flags=0):
+
+    code = code[1:]
+    skip, infoflags, min, max = code[:4]
+    if max == MAXREPEAT:
+        max = "MAXREPEAT"
+    start = 4
+    checker = None
+
+    if infoflags & SRE_INFO_PREFIX:
+        prefix_len, prefix_skip = code[4:6]
+        start = 6
+        prefix = code[start : start + prefix_len]
+        if flags & SRE_FLAG_BYTE_PATTERN:
+            prefix = b"".join(map(lambda x: x.to_bytes(1, "big"), prefix))
         else:
-            start.add_special_edge("free",end)
-            start.add_special_edge("free",repauto.start)
-            
-        repauto.end.add_special_edge("free",start)
-        return Automaton(start,end,[start,end]+repauto.vertices)
+            prefix = "".join(map(chr, prefix))
+        start += prefix_len
+        overlap = code[start : start + prefix_len]
+        start += prefix_len
+        checker = lambda s, pos: s[pos : pos + len(prefix)] == prefix
 
-    
-class Repeat(AST):
-    def __init__(self,value,lower,upper,greedy = True):
-        self.value = value
-        self.lower = lower
-        self.upper = upper
-        self.greedy = greedy
-        if not 0 <= lower:
-            raise ValueError("Minimum number of repetations should be at least 0")
-        if upper and not (lower<=upper):
-            raise ValueError("Max number of repetations should be at least Min number")
-        
-    def __str__(self,indent = 0):
-        return " "*indent+f"Repeat({self.lower},{self.upper}):\n"+self.value.__str__(indent=indent+1)
-
-    def simplify(self):
-        self.value = self.value.simplify()
-        if self.lower and self.lower > 0:
-            if self.upper == None:
-                newnode = Concat(
-                    [self.value]*self.lower
-                    +[Unlimited(self.value,greedy=self.greedy)])
-            else:
-                newnode = Concat(
-                    [self.value]*self.lower
-                    +[Optional(self.value,greedy=self.greedy)]*(self.upper-self.lower))
+    if infoflags & SRE_INFO_CHARSET:
+        charset = code[start:skip]
+        pre, conditions, neged, _ = topy.literals_to_cond(
+            [IN, len(charset)] + charset, 0, flags=flags
+        )
+        if flags & SRE_FLAG_BYTE_PATTERN:
+            pre = ["num = lambda x: x[0]"] + pre
         else:
-            if self.upper == None:
-                newnode = Unlimited(self.value,greedy=self.greedy)
-            else:
-                newnode = Concat([Optional(self.value,greedy=self.greedy)]*(self.upper))
-        newnode = newnode.simplify()
-        return newnode
+            pre = ["num = ord"] + pre
+        codelines = ["def checkprefix(s,pos):"]
+        codelines += topy.indent(pre, 1)
+        codelines.append(f" return {' or '.join(conditions)}")
+        pycode = "\n".join(codelines)
+        if flags & SRE_FLAG_DEBUG:
+            print("---------------------- Prefix-Checker code ------------------------")
+            for i, l in enumerate(pycode.split("\n")):
+                print(i + 1, l)
+        res = {}
+        exec(pycode, res)
+        checker = res["checkprefix"]
 
-    def automaton(self):
-        raise Exception("Repeat should be simplified before generating automaton")
-        
-class Concat(AST):
-    def __init__(self,parts):
-        self.parts = parts
+    return {
+        "flags": flags,
+        "min": min,
+        "max": max,
+        "prefix_checker": checker,
+    }
 
-    def __str__(self,indent = 0):
-        res = [" "*indent+"Concat:"]+[p.__str__(indent=indent+1) for p in self.parts]
-        return "\n".join(res)
 
-    def simplify(self):
-        self.parts = [p.simplify() for p in self.parts]
-        newparts = []
-        for p in self.parts:
-            if isinstance(p,Concat):
-                newparts += p.parts
-            else:
-                newparts.append(p)
-        self.parts = newparts
-        return self
+def get_all_args(opcodes, code):
+    found = set()
+    for i, c in enumerate(code):
+        if isinstance(c, _NamedIntConstant) and c in opcodes:
+            found.add(code[i + 1])
+    return found
 
-    def automaton(self,number):
-        last = None
-        autos = []
-        
-        for part in self.parts:
-            auto = part.automaton(number)
-            number+= len(auto.vertices)
-            if last:
-                last.end.add_special_edge("free",auto.start)
-            autos.append(auto)
-            last = auto
-        
-            
-        start = autos[0].start
-        end = autos[-1].end
-        vertices = [v for a in autos for v in a.vertices]        
-        return Automaton(start,end,vertices)
-    
-        
-class InputCheck(AST):
-    # nodes that depend on the input for their edges.
-    pass
 
-class Start(InputCheck):
-    def __str__(self,indent = 0):
-        return " "*indent+"Start"
+def compile_regex(regex, flags=0, name="regex"):
+    # flags |= SRE_FLAG_DEBUG
+    if isinstance(regex, bytes):
+        flags |= SRE_FLAG_BYTE_PATTERN
 
-    def automaton(self,number):
-        start = Vertex(number)
-        end = Vertex(number+1)
-        start.add_special_edge("start",end)
-        auto = Automaton(start,end,[start,end])
-        return auto    
+    state, code = compile_without_repeat(regex, flags)
+    infolen = info_len(code)
+    info, code = code[:infolen], code[infolen:]
 
-    
-class End(InputCheck):
-    def __str__(self,indent = 0):
-        return " "*indent+"End"
+    info = parse_info(info, flags=flags)
 
-    def automaton(self,number):
-        start = Vertex(number)
-        end = Vertex(number+1)
-        start.add_special_edge("end",end)
-        auto = Automaton(start,end,[start,end])
-        return auto    
-    
-class Empty(InputCheck):
-    # the emptry regexp, does nothing
-    def __str__(self,indent = 0):
-        return " "*indent+"Empty"
+    info["groups"] = state.groups
+    info["groupdict"] = state.groupdict
+    info["flags"] |= state.flags
 
-    def automaton(self,number):
-        start = Vertex(number)
-        auto = Automaton(start,start,[start])
-        return auto
-    
-class SingleCharacter(InputCheck):
-    def __init__(self,charset):
-        self.charset = charset
+    allmarks = get_all_args({MARK}, code)
+    maxmark = max(allmarks) if allmarks else -1
 
-    def __str__(self,indent = 0):
-        res = " "*indent+"Charset:\n"+self.charset.__str__(indent=indent+1)
-        return res
+    # Get all groups that are refrenced, their marks are important for the state of the backtracker
+    refrenced_groups = get_all_args({GROUPREF, GROUPREF_EXISTS}, code)
+    # Mapping from actual MARK argument to the position in the state
+    statemarks = {2 * i: 2 * j for j, i in enumerate(refrenced_groups)} | {
+        2 * i + 1: 2 * j + 1 for j, i in enumerate(refrenced_groups)
+    }
 
-    def automaton(self,number):
-        start = Vertex(number)
-        end = Vertex(number+1)
-        start.add_char_edge(self.charset,end)
-        auto = Automaton(start,end,[start,end])
-        return auto
-
-class CapturingGroup(AST):
-    def __init__(self,index,value,name = None):
-        self.index = index
-        self.value = value
-        self.name = name
-
-    def __str__(self,indent = 0):
-        return " "*indent+f"CapturingGroup({self.index}{','+self.name if self.name else ''}):\n"+self.value.__str__(indent=indent+1)
-
-    def simplify(self):
-        # no simplifications, just pass it on
-        self.value = self.value.simplify()
-        return self
-    
-    def automaton(self,number):
-        start = Vertex(number)
-        end = Vertex(number+1)
-        subauto = self.value.automaton(number+2)
-        start.add_special_edge("start_capture",subauto.start,config = self.index)
-        subauto.end.add_special_edge("end_capture",end,config = self.index)
-        
-        return  Automaton(start,end,[start,end]+subauto.vertices)
-    
-    
-    
-    
-def ast_for_tokentree(tree):
-    """
-    Compiles a tokentree to an ast.
-    It recurses when it encounters groups.
-    Within a group it relies heavily on the fact that each group is a set of 0 or more alternatives
-    Each alternative is the concatination of 0 or more parts
-    Each part is either a character class, a group, a repetation or a special lookup.
-    """
-    alternatives = []
-    currentparts = []
-    for token in tree:
-        if isinstance(token,charset.Charset):
-            currentparts.append(SingleCharacter(token))
-        elif isinstance(token,tokenizer.Group):
-            subast = ast_for_tokentree(token.tokens)
-            if token.capturing is None:
-                # non capturing groups can just be added as tree
-                currentparts.append(subast)
-            else:
-                # capturing group
-                group = CapturingGroup(token.capturing,subast,token.name)
-                currentparts.append(group)                
-        elif token == tokenizer._START:
-            currentparts.append(Start())
-        elif token == tokenizer._END:
-            currentparts.append(End())
-        elif isinstance(token,tuple):
-            if not currentparts:
-                raise ValueError("Repetition operator in regexp without something to repeat")
-            torepeat = currentparts.pop()
-            if isinstance(torepeat,Start) or isinstance(torepeat,End):
-                # TODO: is this needed?
-                raise ValueError("Repetition operator can not be aplied to ^ or $")
-            if isinstance(torepeat,Repeat):
-                if token == tokenizer._OPTIONAL and torepeat.greedy:
-                    # The ? denoted a non greedy repetition
-                    torepeat.greedy = False
-                    currentparts.append(torepeat)
-                    continue
-                else:
-                    raise ValueError("Multiple repeats")
-            currentparts.append(Repeat(torepeat,*token))
-        elif token == tokenizer._OR:
-            # Optimize so that an empty or single item alternative is not concatinated.
-            # When changed, also change below
-            if len(currentparts) == 0:
-                alternatives.append(Empty())
-            elif len(currentparts) == 1:
-                alternatives.append(currentparts[0])
-            else:
-                current = Concat(currentparts)
-                alternatives.append(current)
-            currentparts = []
-
-    # handle any remaining in this alternative
-    if len(currentparts) == 0:
-        alternatives.append(Empty())
-    elif len(currentparts) == 1:
-        alternatives.append(currentparts[0])
-    else:
-        current = Concat(currentparts)
-        alternatives.append(current)            
-
-    # optimzation to not add any single alternatives
-    if len(alternatives) == 1:
-        return alternatives[0]
-    else:
-        return Alternatives(alternatives)
-        
-
-def get_ast(regexp):
-    """
-    Creates an AST from a regexp by first converting to a tree of groups and tokens, and then applying the Shunting-yard algorithm
-    """        
-    tree,length,groupcount,groupnames = tokenizer.token_tree(regexp)
-    if length != len(regexp):
-        raise ValueError("Found ')' without matching '('")
-    return ast_for_tokentree(tree), groupcount, groupnames
-
-def get_automaton(regexp):
-    tree,groupcount,groupnames = get_ast(regexp)
-    tree = tree.simplify()
-    auto = tree.automaton(0)
-    auto.groups = {'count':groupcount,'names':groupnames}
-    return auto
-
+    parts = code_to_parts(code)
+    pycode = topy.parts_to_py(
+        parts,
+        name=name,
+        comment=f"Regex: {repr(regex)}",
+        flags=flags,
+        marknum=maxmark + 1,
+        statemarks=statemarks,
+    )
+    if flags & SRE_FLAG_DEBUG:
+        print("---------------------- Main code ------------------------")
+        for i, l in enumerate(pycode.split("\n")):
+            print(i + 1, l)
+    res = {}
+    exec(pycode, res)
+    return info, res[name]
