@@ -25,10 +25,12 @@ Will never be implemented:
 
 Known differences:
 - For Unicode patterns `\d` is defined using python's `isnumerical()`, which is not the same behavior as `re`. To get the original behavior `unicodedata` might be used as an optional dependency by passing the `purere.STRICTUNI` flag.
-- We now do not agree with `re` on how to set the groups in `((x|y)*)*` with inputstring `xyyzz`. 
+- We now do not agree with `re` on how to set the groups in `((x|y)*)*` with inputstring `xyyzz`. Will be fixed in the furture after reimplementing repetitions.
 - Some implementation details:
   - Match objects are not cached and hence copying them gives back a different object
-  -  TODO?
+  - Buffers containing the bytes that are matched by `finditer` are not locked as pure python code can not do this. In general the behavior of `finditer` on a changing string is undefined and not tested.
+  - If a compiled pattern is given to `purere.compile` as well as flags then no error is raised. Instead, the pattern is recompiled with the new flags if needed.
+  - Debug output now shows python code
 
 
 Usage
