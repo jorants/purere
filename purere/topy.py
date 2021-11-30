@@ -111,7 +111,6 @@ def literals_to_cond(code, i, flags=0):
         elif "RANGE" in str(opcode):
             minval, maxval = code[i], code[i + 1]
             minchar, maxchar = ctopy(minval), ctopy(maxval)
-            print(minchar, maxchar)
             i += 2
             # Some unicode ranges are not translated by sre_parse for some reason, so in unicode ignore mode we check both upper, lower and the roiginal
             conditions.append(f"{minchar} <= {val} <= {maxchar}")
@@ -128,7 +127,7 @@ def literals_to_cond(code, i, flags=0):
             bits = code[i : i + 8]
             pre.append(f"bitmapnum = num({val}) // 32")
             pre.append(f"bitnum = num({val}) - bitmapnum*32")
-            conditions.append(f"({bits}[bitmapnum] & (1 << bitnum))")
+            conditions.append(f"(num({val}) < 256 and ({bits}[bitmapnum] & (1 << bitnum)))")
             i += 8
         elif opcode is ANY_ALL:
             conditions.append("True")
@@ -195,16 +194,15 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
                 emit(f"stack.append(({to[0]},pos,marks,smarks))")
             i += 1
         elif (
-            opcode is RANGE
-            or opcode is ANY
-            or opcode is ANY_ALL
+            "ANY" in str(opcode).split("_")
             or "IN" in str(opcode).split("_")
+            or "RANGE" in str(opcode).split("_")
             or "LITERAL" in str(opcode).split("_")
         ):
             pre, conds, neged, i = literals_to_cond(part, i - 1, flags=flags)
             opparts = str(opcode).split("_")
 
-            emit("if  pos >= endpos: break")
+            emit("if pos >= endpos: break")
             for p in pre:
                 emit(p)
 
@@ -296,13 +294,15 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
 
             emit(
                 f"if not(pos+{arglen} <= endpos) or s[pos:pos+{arglen}] != {teststr}: break"
+                # Whould be ever so slightly faster but does not work with exotic byteliker types....
+                #f"if not(s.startswith({teststr},pos)): break"
             )
             emit(f"pos += {arglen}")
         elif opcode is SUCCESS:
             emit(
                 "if ((full and pos == endpos) or not full) and (not nonempty or pos!=startpos):"
             )
-            emit(" return True,pos,marks")
+            emit(" return True,pos,marks,done")
             emit("else:")
             emit(" break")
             emit_comment()
@@ -344,9 +344,35 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
             emit(f"if marks[{group*2+1}] == None:")
             emit(f" part = {jumploc}")
             emit(" continue")
-        # elif opcode in {ASSERT, ASSERT_NOT}:
-        #     print(part[i-1:])
-        #     raise Exception("")
+        elif opcode is ABS_REPEAT_ONE:
+            nextpart, minrep,maxrep = part[i:i+3]
+                        
+            looplines = part_to_py(part[i+3:-1],0,flags=flags)
+            looplines = [line for line in looplines if "part +=" not in line]
+            looplines = [line for line in looplines if "done.add" not in line]
+            
+            if minrep>0:
+                emit("correct = False")
+                emit(f"for rep in range({minrep}):")
+                lines += indent(looplines,indent=1)
+                emit("else:")
+                emit(" correct = True")
+                emit("if not correct:")
+                emit_fail(indent=1)       
+            if maxrep!=minrep:
+                emit("correct = False")
+                if maxrep is MAXREPEAT:
+                    emit("while True:")
+                else:
+                    emit(f"for rep in range({maxrep-minrep}):")
+                # Now we may jump out of the loop if we can not get another itteration
+                emit(f" stack.append(({nextpart},pos,marks,smarks))")
+                lines += indent(looplines,indent=1)
+                emit("else:")
+                emit(" correct = True")
+                emit("if not correct:")
+                emit_fail(indent=1)       
+            i = len(part)
         else:
             raise NotImplementedError(f"Unknown opcode: {opcode}")
         emit_comment()
@@ -368,12 +394,14 @@ def parts_to_py(
         raise NotImplementedError("Locale matching (L flag) is not supported")
 
     codelines = [
-        f"def {name}(s, pos = 0, endpos = None, full = False, nonempty = False):",
+        f"def {name}(s, pos = 0, endpos = None, full = False, nonempty = False, done = None):",
         f" # {comment}",
         " num = lambda x: x[0]" if flags & SRE_FLAG_BYTE_PATTERN else " num = ord",
         " startpos = pos",
         " endpos = len(s) if endpos is None else min(endpos,len(s))",
-        " done = set()",
+        " if done == None:",
+        "  done = set()",
+        #" done = set()",
         f" marks = (None,)*{marknum}",
         f" smarks = (None,)*{len(statemarks)}",
         " stack = [(0,pos,marks,smarks)]",
@@ -386,11 +414,12 @@ def parts_to_py(
         "",
         "  while True:",
     ]
+
     for i, part in enumerate(parts):
         codelines.append(f"   ")
         codelines.append(f"   if part == {i}:")
         codelines += indent(part_to_py(part, i, flags=flags, statemarks=statemarks))
-    codelines.append(" return None, None, None")
+    codelines.append(" return None, None, None, done")
     code = "\n".join(codelines)
 
     if "unicodedata" in code:

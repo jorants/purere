@@ -43,6 +43,16 @@ def replace_repeats(command_list):
 
         if opcode in {MAX_REPEAT, MIN_REPEAT}:
             mintimes, maxtimes, torepeat = args
+            if len(torepeat) == 1 and opcode is MAX_REPEAT:
+                repcode = torepeat[0][0]
+                if ("ANY" in str(repcode).split("_")
+                    or "IN" in str(repcode).split("_")
+                    or "RANGE" in str(repcode).split("_")
+                    or "LITERAL" in str(repcode).split("_")):
+                    # keep repeats if there is only one
+                    new_pattern.append((opcode,args))
+                    continue
+            
             if mintimes > 0:
                 # unroll the minimal required parts
                 new_pattern.data += torepeat.data * mintimes

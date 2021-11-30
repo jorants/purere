@@ -13,7 +13,11 @@ def iter_jump_locations(code):
             yield from code[i + 1]
         elif opcode is ABS_GROUPREF_EXISTS:
             yield code[i + 2]
+        elif opcode is ABS_REPEAT_ONE:
+            yield code[i+1]
 
+
+            
 
 def absolute_jump_locations(code):
     # changes code to have absolute jumps and branch to have a list of arguments
@@ -39,6 +43,10 @@ def absolute_jump_locations(code):
             j, reljump = next(itt)
             code[i] = ABS_GROUPREF_EXISTS
             code[j] = j + reljump - 1
+        elif opcode is REPEAT_ONE:
+            _, reljump = next(itt)
+            code[i] = ABS_REPEAT_ONE
+            code[i+1] = i + reljump + 1
     return code
 
 
@@ -50,6 +58,8 @@ def remap_jumps(code, mapping):
             code[i + 1] = [mapping[v] for v in code[i + 1]]
         elif opcode is ABS_GROUPREF_EXISTS:
             code[i + 2] = mapping[code[i + 2]]
+        elif opcode is ABS_REPEAT_ONE:
+            code[i + 1] = mapping[code[i + 1]]
     return code
 
 
@@ -108,7 +118,7 @@ def parse_info(code, flags=0):
         max = "MAXREPEAT"
     start = 4
     checker = None
-
+    fixed_prefix = None
     if infoflags & SRE_INFO_PREFIX:
         prefix_len, prefix_skip = code[4:6]
         start = 6
@@ -120,8 +130,10 @@ def parse_info(code, flags=0):
         start += prefix_len
         overlap = code[start : start + prefix_len]
         start += prefix_len
-        checker = lambda s, pos: s[pos : pos + len(prefix)] == prefix
-
+        #checker = lambda s, pos: s.startswith(prefix,pos)
+        #checker = lambda s, pos: s[pos : pos + len(prefix)] == prefix
+        fixed_prefix = prefix
+        
     if infoflags & SRE_INFO_CHARSET:
         charset = code[start:skip]
         pre, conditions, neged, _ = topy.literals_to_cond(
@@ -148,19 +160,20 @@ def parse_info(code, flags=0):
         "min": min,
         "max": max,
         "prefix_checker": checker,
+        "fixed_prefix": fixed_prefix,
     }
 
 
 def get_all_args(opcodes, code):
     found = set()
     for i, c in enumerate(code):
-        if isinstance(c, _NamedIntConstant) and c in opcodes:
+        if isinstance(c, _NamedIntConstant) and any(c is code for code in opcodes):
             found.add(code[i + 1])
     return found
 
 
 def compile_regex(regex, flags=0, name="regex"):
-    # flags |= SRE_FLAG_DEBUG
+    #flags |= SRE_FLAG_DEBUG
     if isinstance(regex, bytes):
         flags |= SRE_FLAG_BYTE_PATTERN
 
@@ -185,6 +198,7 @@ def compile_regex(regex, flags=0, name="regex"):
     }
 
     parts = code_to_parts(code)
+
     pycode = topy.parts_to_py(
         parts,
         name=name,

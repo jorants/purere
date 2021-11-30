@@ -17,7 +17,7 @@ def test_time_compile(regex):
     # not really fair as we ignore subsets and just match the first occurence, after which everything is taken
 
     start = timeit.default_timer()
-    myfunc = purere.compile(regex)
+    purere.compile(regex)
     stop = timeit.default_timer()
     localtime = stop - start
 
@@ -30,20 +30,20 @@ def test_time_compile(regex):
     print("slowdown:", localtime / othertime)
 
 
-@pytest.mark.skip("Not now")
+#@pytest.mark.skip("Not now, to slow")
 @pytest.mark.parametrize("regex", regexes)
 def test_time_run(regex):
-    data = open("test/bench.txt").read()
+    data = open("tests/bench.txt").read()
 
     pat = purere.compile(regex)
     start = timeit.default_timer()
-    pat.search(data)
+    pat.findall(data)
     stop = timeit.default_timer()
     localtime = stop - start
 
     pat = re.compile(regex)
     start = timeit.default_timer()
-    pat.search(data)
+    pat.findall(data)
     stop = timeit.default_timer()
     othertime = stop - start
 
@@ -81,7 +81,7 @@ from .re_tests import benchmarks
 def test_re_benchmarks(bench):
     "re_tests benchmarks"
     pattern, s = bench
-
+    print(pattern)
     start = timeit.default_timer()
     p = re.compile(pattern)
     assert p.search(s)
@@ -94,7 +94,7 @@ def test_re_benchmarks(bench):
     assert p.fullmatch(s2, 10000, 10000 + len(s))
     stop = timeit.default_timer()
     othertime = stop - start
-
+    
     start = timeit.default_timer()
     p = purere.compile(pattern)
     assert p.search(s)

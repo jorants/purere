@@ -124,14 +124,15 @@ class _Scanner:
         self._last_empty = False
         self.pattern = pattern
         self._string = string
-        self._done = False
+        self._fin = False
         self._endpos = endpos
-
+        self._done = None
+        
     def _run(self, f):
-        if self._done:
+        if self._fin:
             return
         res = f(
-            self._string, self._curpos, self._endpos, nonempty_first=self._last_empty
+            self._string, self._curpos, self._endpos, nonempty_first=self._last_empty,done=self._done
         )
         if res:
             # fix starting position
@@ -141,7 +142,7 @@ class _Scanner:
             self._last_empty = span[0] == span[1]
             return res
         else:
-            self._done = True
+            self._fin = True
             self._curpos = len(self._string)
             return
 
@@ -175,9 +176,12 @@ class Pattern:
         elif not (self.flags & BYTEPATTERN) and not isinstance(s, str):
             raise TypeError("Can only match str types with string pattern")
 
-    def _match(self, string, pos=0, endpos=None, nonempty=False, full=False):
-        success, ending, marks = self._match_function(
-            string, pos=pos, endpos=endpos, nonempty=nonempty, full=full
+    def _match(self, string, pos=0, endpos=None, nonempty=False, full=False, done=None):
+        if done:
+            # remove old stuff we will never see to keep memory footprint reasonable
+            done = {(a,b,c) for a,b,c in done if b>=pos}
+        success, ending, marks, done = self._match_function(
+            string, pos=pos, endpos=endpos, nonempty=nonempty, full=full, done = done
         )
         if success:
             arg_info = {
@@ -190,13 +194,16 @@ class Pattern:
                 + [(marks[i], marks[i + 1]) for i in range(0, len(marks), 2)]
             )
             regs = tuple((a, b) if a != None else (-1, -1) for a, b in regs)
-            return Match(self.pattern_info, arg_info, regs)
+            return Match(self.pattern_info, arg_info, regs),done
         else:
-            return None
+            return None,done
 
-    def _search(self, string, pos=0, endpos=None, nonempty_first=False):
+        
+    def _search_no_fixed_prefix(self, string, pos=0, endpos=None, nonempty_first=False,done=None):
         if not endpos:
             endpos = len(string)
+           
+            
         minlen = self._info["min"]
 
         for i in range(pos, endpos + 1 - minlen):
@@ -205,13 +212,41 @@ class Pattern:
             ):
                 continue
 
-            match = self._match(
-                string, pos=i, endpos=endpos, nonempty=nonempty_first and i == pos
+            match,done = self._match(
+                string, pos=i, endpos=endpos, nonempty=nonempty_first and i == pos, done = done
             )
             if match:
                 match.pos = pos
                 return match
         return None
+
+    def _search_fixed_prefix(self, string, pos=0, endpos=None, nonempty_first=False,done=None):
+        if not hasattr(string,"find") and self._basetype == bytes:
+            searchstring = bytes(string)
+        else:
+            searchstring = string
+        prefix = self._info["fixed_prefix"]
+        curpos = pos
+        while True:
+            loc = searchstring.find(prefix,curpos,endpos)
+            if loc == -1:
+                return None
+
+            # We do not need nonempty_first as there is a fixed prefix here, so there is no posibility of being empty
+            match,done = self._match(
+                string, pos=loc, endpos=endpos, done = done
+            )
+            if match:
+                match.pos = pos
+                return match
+            else:
+                curpos = loc+1
+
+    def _search(self, string, pos=0, endpos=None, nonempty_first=False,done=None):
+        if self._info["fixed_prefix"]:
+            return self._search_fixed_prefix(string,pos=pos,endpos=endpos,nonempty_first=nonempty_first,done=done)
+        else:
+            return self._search_no_fixed_prefix(string,pos=pos,endpos=endpos,nonempty_first=nonempty_first,done=done)
 
     def search(self, string, pos=0, endpos=None):
         self._check_type(string)
@@ -219,11 +254,11 @@ class Pattern:
 
     def match(self, string, pos=0, endpos=None):
         self._check_type(string)
-        return self._match(string, pos=pos, endpos=endpos)
+        return self._match(string, pos=pos, endpos=endpos)[0]
 
     def fullmatch(self, string, pos=0, endpos=None):
         self._check_type(string)
-        return self._match(string, pos=pos, endpos=endpos, full=True)
+        return self._match(string, pos=pos, endpos=endpos, full=True)[0]
 
     def findall(self, string, pos=0, endpos=None):
         self._check_type(string)
@@ -295,7 +330,7 @@ class Pattern:
         return self.pattern == other.pattern and self.flags == other.flags
 
     def __repr__(self):
-        # These flags fo not need printing
+        # These flags do not need printing
         newflags = self.flags & (~UNICODE)
         newflags &= ~BYTEPATTERN
 
