@@ -73,6 +73,78 @@ A bit more care needs to be taken to implement capturing groups and their relate
 
 This design leads to a worst-case time complexity `O(p^2s^(1+2c))`, where `p` is the pattern size, `s` is the string length, and `c` is the number of back-referenced groups. Here the second `p` factor comes from the finding of the if for the right part in the big while loop, but in practice this can be ignored as the actual matching inside the if will take longer. This might be sped up in a future version using binary search by nesting the if statements. 
 
+Example result
+--------------
+As an ilustration of the above, the regex `(cool|awesome)*` is compiled to the following VM code, where jumps are given by line numbers:
+```
+01: LS_BRANCH [10]
+02: MARK 0
+03: LS_BRANCH [5]
+04: LITERALS [99, 111, 111, 108]
+05: ABS_JUMP 9
+06: LITERALS [97, 119, 101, 115, 111, 109, 101]
+07: ABS_JUMP 9
+08: MARK 1
+09: ABS_JUMP 1
+10: SUCCESS
+```
+Here the `MARK` codes denote the start and end of groups. The `LS_BRANCH` instructions take a list of lines to branch to (and also step to the next line first), `LITERALS` checks for the existence of a string of characters in the string, and `ABS_JUMP` simply jumps to a line.
+
+This is then compiled into a python function as below. The code is slightly cleaned up to remove parts that are needed in general but do not get used in the simple regex above. Also, note that at this point line numbers have been converted in numbers of parts of the VM code that form a logical block.
+```python
+def regex(s, pos = 0, endpos = None, full = False):
+ # Regex: '(cool|awesome)*'
+ endpos = len(s) if endpos is None else min(endpos,len(s))
+ marks = (None,)*2
+ stack = [(0,pos,marks)]
+ while stack:
+  part,pos,marks,smarks = stack.pop()
+  while (part,pos) in done and stack:
+   part,pos,marks = stack.pop()
+  if (part,pos) in done:
+   break
+
+  while True:
+   if part == 0:
+    done.add((part,pos))
+    stack.append((3,pos,marks))
+    # ^  [LS_BRANCH, [3]]
+    marks = marks[:0]+ (pos,) +marks[1:]
+    # ^  [MARK, 0]
+    stack.append((1,pos,marks))
+    # ^  [LS_BRANCH, [1]]
+    if not(pos+4 <= endpos) or s[pos:pos+4] != 'cool': break
+    pos += 4
+    # ^  [LITERALS, [99, 111, 111, 108]]
+    part = 2
+    # ^  [ABS_JUMP, 2]
+   
+   if part == 1:
+    done.add((part,pos))
+    if not(pos+7 <= endpos) or s[pos:pos+7] != 'awesome': break
+    pos += 7
+    # ^  [LITERALS, [97, 119, 101, 115, 111, 109, 101]]
+    part = 2
+    # ^  [ABS_JUMP, 2]
+   
+   if part == 2:
+    done.add((part,pos))
+    marks = marks[:1]+ (pos,) +marks[2:]
+    # ^  [MARK, 1]
+    part = 0
+    continue
+    # ^  [ABS_JUMP, 0]
+   
+   if part == 3:
+    done.add((part,pos))
+    if ((full and pos == endpos) or not full):
+     return True,pos,marks,done
+    else:
+     break
+    # ^  [SUCCESS]
+ return None, None, None, done
+
+```
 
 Development
 -----------
