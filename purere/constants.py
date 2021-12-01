@@ -15,13 +15,13 @@ OPCODES.append(LS_BRANCH)
 # ABS vesion of GROUPREF_EXISTS
 ABS_GROUPREF_EXISTS = _NamedIntConstant(last_opcode_int + 4, "ABS_GROUPREF_EXISTS")
 OPCODES.append(ABS_GROUPREF_EXISTS)
-ABS_REPEAT_ONE = _NamedIntConstant(last_opcode_int + 4, "ABS_REPEAT_ONE")
+ABS_REPEAT_ONE = _NamedIntConstant(last_opcode_int + 5, "ABS_REPEAT_ONE")
 OPCODES.append(ABS_REPEAT_ONE)
 # repeats a single character 
-REPEAT_SINGLE = _NamedIntConstant(last_opcode_int + 5, "REPEAT_SINGLE")
+REPEAT_SINGLE = _NamedIntConstant(last_opcode_int + 6, "REPEAT_SINGLE")
 OPCODES.append(REPEAT_SINGLE)
 # Combines literal
-LITERALS = _NamedIntConstant(last_opcode_int + 6, "LITERALS")
+LITERALS = _NamedIntConstant(last_opcode_int + 7, "LITERALS")
 OPCODES.append(LITERALS)
 
 # if passed unicodedata is used to define numerical characters instead of isnumerical()

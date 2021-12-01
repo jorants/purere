@@ -142,9 +142,11 @@ opcode_size = {
     CHARSET: 9,
     NOP: 1,
     LS_BRANCH:2,
+    ABS_GROUPREF_EXISTS: 3,
+    GROUPREF_EXISTS: 3,
 }
 
-def apply_func_code(code,func,i=0,end=None,funcargs = {}):
+def apply_func_code(code,func,i=0,end=None,**funcargs):
     res = []
     if end is None:
         end = len(code)
@@ -156,10 +158,9 @@ def apply_func_code(code,func,i=0,end=None,funcargs = {}):
             loc = i+1
             while not code[loc] is FAILURE:
                 newloc = loc + code[loc]
-                res += apply_func_code(code,func,loc+1,end=newloc)
+                res += apply_func_code(code,func,loc+1,end=newloc,**funcargs)
                 loc = newloc
-            i = loc+1                
-            continue
+            skip = loc+1-i              
         elif opcode is BIGCHARSET:
             numgroups = code[i+1]
             skip = 2+64+numgroups*8
@@ -169,8 +170,8 @@ def apply_func_code(code,func,i=0,end=None,funcargs = {}):
             try:
                 typename = next(p for p in parts if p in opcode_size)
                 skip = opcode_size[typename]
-            except StopIteration:
-                raise ValueError(f"Specify {opcode}")
+            except StopIteration as e:
+                raise ValueError(f"Specify {opcode}") from e
         else:
             skip = opcode_size[opcode]
             
@@ -178,20 +179,16 @@ def apply_func_code(code,func,i=0,end=None,funcargs = {}):
             # Complicated opcode
             startargs,endargs = skip
             if "ABS" in str(opcode):
-                skip = code[i+1]+1+endargs-i
-                print(i,skip)
-                for c in enumerate(code):
-                    print(*c)
+                skip = code[i+1]-i
             else:
                 skip = code[i+1]+1+endargs
-            
             if startargs is not None:
                 args = code[i+2:i+startargs+2]+code[i+skip-endargs:i+skip]
                 substart = i+startargs+2
                 subend = i+skip-endargs
-                res += apply_func_code(code,func,substart,subend)                
+                res += apply_func_code(code,func,substart,subend,**funcargs)                
         else:
-            args = code[i+1:i+skip]    
+            args = code[i+1:i+skip]
         locres = func(code,i,opcode,args,substart,subend,**funcargs)
         if locres:
             res+=locres
@@ -232,21 +229,47 @@ def combine_literals(code,i,opcode,args,substart,subend):
             for k in range(i + 2, j):
                 code[k] = NOP
 
+def absolute_jump_locations(code,i,opcode,args,substart,subend):
+    # changes code to have absolute jumps and branch to have a list of arguments
+    # New opcodes are introduced for this with an ABS prefix
+    # In addition to this branches are rewritten so all branch locations (in absolute value) are named at the start
+    if opcode is JUMP:
+        reljump = code[i+1]
+        code[i] = ABS_JUMP
+        code[i + 1] = i + 1 + reljump
+        return [code[i+1]]
+    elif opcode is BRANCH:
+        loc = i+1
+        locations = []
+        while not code[loc] is FAILURE:
+            newloc = loc + code[loc]
+            locations.append(newloc)
+            loc = newloc
+        code[i] = LS_BRANCH
+        code[i + 1] = locations[:-1]  # leave out the final FAILURE
+        for l in locations:
+            code[l] = NOP
+        return code[i+1]
+    elif opcode is GROUPREF_EXISTS:
+        reljump = code[i+2]
+        code[i] = ABS_GROUPREF_EXISTS
+        code[i+2] = i + reljump +1
+        return [code[i+2]]
+    elif opcode is REPEAT_ONE:
+        reljump = code[i+1]
+        code[i] = ABS_REPEAT_ONE
+        code[i+1] = i + reljump + 1
+        return [code[i+1]]
 
-
-def info_len(code):
-    if code[0] is INFO:
-        return code[1] + 1
-    else:
-        return 0
+def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
+    if opcode is ABS_JUMP:
+        code[i + 1] = mapping[code[i + 1]]
+    elif opcode is LS_BRANCH:
+        code[i + 1] = [mapping[v] for v in code[i + 1]]
+    elif opcode is ABS_GROUPREF_EXISTS:
+        code[i + 2] = mapping[code[i + 2]]
+    elif opcode is ABS_REPEAT_ONE:
+        code[i + 1] = mapping[code[i + 1]]
+        
                 
 
-def compile_without_repeat(regex, flags=0):
-    parsed = sre_parse.parse(regex, flags)
-    #parsed = apply_func_ast(parsed,split_repeats)
-    parsed = apply_func_ast(parsed,replace_repeats)
-
-    code = sre_compile._code(parsed, flags)
-    apply_func_code(code,remove_repeats)
-    #code = remove_repeats(code)
-    return parsed.state, code
