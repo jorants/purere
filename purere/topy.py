@@ -1,5 +1,5 @@
 from .constants import *
-
+from .constants import _NamedIntConstant
 
 def get_ctopy(flags=0):
     # ctopy converts a integer to the correspoinding python (bytes or str) representation
@@ -374,6 +374,8 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
                 emit_fail(indent=1)       
             i = len(part)
         else:
+            if not isinstance(opcode,_NamedIntConstant):
+                raise ValueError(f"Wrong code {opcode}")
             raise NotImplementedError(f"Unknown opcode: {opcode}")
         emit_comment()
 

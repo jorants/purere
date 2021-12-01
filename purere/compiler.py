@@ -1,4 +1,4 @@
-from .proccess import compile_without_repeat, info_len, combine_literals
+from .proccess import compile_without_repeat, info_len, combine_literals, apply_func_code
 from .constants import *
 from .constants import _NamedIntConstant
 from .dis import dis
@@ -81,7 +81,9 @@ def code_to_parts(code):
     parts = [code[a:b] for a, b in intervals]
 
     # now that we have the code blocks and a mapping of jumps we kan remove all nops,but first combine literals:
-    parts = [combine_literals(part) for part in parts]
+    for p in parts:
+        apply_func_code(p,combine_literals)
+        #parts = [combine_literals(part) for part in parts]
     parts = [[c for c in code if not c is NOP] for code in parts]
 
     # some parts are simply a jump to another part, we should take those out and point to target
