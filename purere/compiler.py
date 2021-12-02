@@ -135,9 +135,7 @@ def compile_regex(regex, flags=0, name="regex"):
     parsed = apply_func_ast(parsed,split_repeats)
     parsed = apply_func_ast(parsed,unroll_small) 
     parsed = apply_func_ast(parsed,padd_loops)
-    #if len(str(parsed)) > 200 or "REPEAT" not in str(parsed): raise NotImplementedError("Skip for now")
-    for p in parsed:
-        print(p)
+
     # use stdlib's sre_compile to compile to VM code
     code = sre_compile._code(parsed, flags)
 
