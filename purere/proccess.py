@@ -1,3 +1,7 @@
+"""
+Contians functions for the proccessing of the regex AST and regex VM code to put it into a form we like
+"""
+
 import sre_compile
 import sre_parse
 
@@ -5,7 +9,7 @@ from .constants import *
 
 def apply_func_ast(command_list,func):
     # Applies func recursivly to all nodes in AST
-    # Func shoudl take an opcode and an argument tuple and return a list of (opcode,arg) tuples  
+    # Func should take an opcode and an argument tuple and return a list of (opcode,arg) tuples  
     state = command_list.state
     new_pattern = sre_parse.SubPattern(state)
 
@@ -41,6 +45,7 @@ def apply_func_ast(command_list,func):
     return new_pattern
 
 def replace_repeats(opcode,args):
+    # old function to replace repeats
     if opcode in {MAX_REPEAT, MIN_REPEAT}:
         mintimes, maxtimes, torepeat = args
         if len(torepeat) == 1 and opcode is MAX_REPEAT:
@@ -98,10 +103,11 @@ def replace_repeats(opcode,args):
         return [(opcode, args)]
 
 def split_repeats(opcode,args):
+    # We split optional and required parts of repeats
     if opcode in {MAX_REPEAT, MIN_REPEAT}:
         mintimes, maxtimes, torepeat = args
 
-        if mintimes > 0 and maxtimes is MAXREPEAT:
+        if mintimes > 0 and maxtimes != mintimes:
             if maxtimes is MAXREPEAT:
                 return [(opcode,(mintimes,mintimes,torepeat)),
                         (opcode,(0,MAXREPEAT,torepeat))
