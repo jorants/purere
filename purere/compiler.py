@@ -179,7 +179,8 @@ def compile_regex(regex, flags=0, name="regex"):
     if flags & SRE_FLAG_DEBUG:
         print("---------------------- Main code ------------------------")
         for i, l in enumerate(pycode.split("\n")):
-            print(i + 1, l)
+            print(l)
+            #print(i + 1, l)
     #compile the python code
     res = {}
     exec(pycode, res)
