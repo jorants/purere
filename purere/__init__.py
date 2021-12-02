@@ -179,7 +179,7 @@ class Pattern:
     def _match(self, string, pos=0, endpos=None, nonempty=False, full=False, done=None):
         if done:
             # remove old stuff we will never see to keep memory footprint reasonable
-            done = {(a,b,c) for a,b,c in done if b>=pos}
+            done = {(a,b,c,d) for a,b,c,d in done if b>=pos}
         success, ending, marks, done = self._match_function(
             string, pos=pos, endpos=endpos, nonempty=nonempty, full=full, done = done
         )
@@ -203,15 +203,13 @@ class Pattern:
         if not endpos:
             endpos = len(string)
            
-            
         minlen = self._info["min"]
-
+        
         for i in range(pos, endpos + 1 - minlen):
             if self._info["prefix_checker"] and not self._info["prefix_checker"](
                 string, i
             ):
                 continue
-
             match,done = self._match(
                 string, pos=i, endpos=endpos, nonempty=nonempty_first and i == pos, done = done
             )

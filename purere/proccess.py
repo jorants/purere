@@ -44,64 +44,6 @@ def apply_func_ast(command_list,func):
         new_pattern.data += func(opcode,args)
     return new_pattern
 
-def replace_repeats(opcode,args):
-    # old function to replace repeats
-    if opcode in {MAX_REPEAT, MIN_REPEAT}:
-        mintimes, maxtimes, torepeat = args
-        if len(torepeat) == 1 and opcode is MAX_REPEAT:
-            repcode = torepeat[0][0]
-            if ("ANY" in str(repcode).split("_")
-                or "IN" in str(repcode).split("_")
-                or "RANGE" in str(repcode).split("_")
-                or "LITERAL" in str(repcode).split("_")):
-                # keep repeats if there is only one
-                return [(opcode,args)]
-
-        res = []
-            
-        if mintimes > 0:
-            # unroll the minimal required parts
-            res += torepeat.data * mintimes
-            if maxtimes != MAXREPEAT:
-                maxtimes -= mintimes
-            mintimes = 0
-
-    
-        empty = sre_parse.SubPattern(torepeat.state)
-         
-        if maxtimes is not MAXREPEAT and maxtimes != 0:
-            # we could now unroll a{0,5} as a?a?a?a?a?, but that would be a bad plan
-            # this would casue a lot of backtracking, with all 2**5 combinations tried. Instead we use a series of branch operations: |a(|a(|a(|a(|a))))
-            # altough funcitonally the same as |a|aa|aaa|aaaa|aaaaa, it ensures we do not keep checking the same constantly.
-            # the order of branches matters for MIN/MAX
-            newcode = []
-            
-            for number in range(maxtimes):
-                subpat = sre_parse.SubPattern(torepeat.state)
-                subpat.data = torepeat.data + newcode
-                if opcode is MAX_REPEAT:
-                    newcode = [(BRANCH, (None, [subpat, empty]))]
-                else:
-                    newcode = [(BRANCH, (None, [empty, subpat]))]
-
-            res += newcode
-
-        elif maxtimes is MAXREPEAT:
-            # We need to optionally repeat forever, we rewrite this as a branch between a single go with a back jump or an empty string.
-            # the jump back will be dealt with after compilation, for now we just rewrite a* as (a|)*
-            empty = sre_parse.SubPattern(torepeat.state)
-            newcode = sre_parse.SubPattern(torepeat.state)
-            if opcode is MAX_REPEAT:
-                newcode.append((BRANCH, (None, [torepeat, empty])))
-            else:
-                newcode.append((BRANCH, (None, [empty, torepeat])))
-            res.append((opcode, (mintimes, maxtimes, newcode)))
-
-        return res 
-    else:
-        # non repeat opcode
-        return [(opcode, args)]
-
 def split_repeats(opcode,args):
     # We split optional and required parts of repeats
     if opcode in {MAX_REPEAT, MIN_REPEAT}:
@@ -116,6 +58,57 @@ def split_repeats(opcode,args):
                 return [(opcode,(mintimes,mintimes,torepeat)),
                         (opcode,(0,maxtimes-mintimes,torepeat))
                         ]
+    return [(opcode, args)]
+
+def unroll_small(opcode,args):
+    # Unrolls loops with a small maximum number of repetitions
+    if opcode in {MAX_REPEAT, MIN_REPEAT}:
+        mintimes, maxtimes, torepeat = args
+        if maxtimes <= 4 and maxtimes is not MAXREPEAT:
+            if mintimes == maxtimes:
+                # required small repeat unroll as a repetition
+                return torepeat.data*mintimes
+            elif mintimes == 0:
+                # optional small repeat
+                # we could now unroll a{0,5} as a?a?a?a?a?, but that would be a bad plan
+                # this would casue a lot of backtracking, with all 2**5 combinations tried. Instead we use a series of branch operations: |a(|a(|a(|a(|a))))
+                # altough funcitonally the same as |a|aa|aaa|aaaa|aaaaa, it ensures we do not keep checking the same constantly.
+                # the order of branches matters for MIN/MAX
+                empty = sre_parse.SubPattern(torepeat.state)
+                newcode = []            
+                for number in range(maxtimes):
+                    subpat = sre_parse.SubPattern(torepeat.state)
+                    subpat.data = torepeat.data + newcode
+                    if opcode is MAX_REPEAT:
+                        newcode = [(BRANCH, (None, [subpat, empty]))]
+                    else:
+                        newcode = [(BRANCH, (None, [empty, subpat]))]
+                return newcode           
+    return [(opcode, args)]
+
+
+def branch_loops(opcode,args):
+    # Changes loops with optionals into a branch of the content and an empty string
+    # i.e., we rewrite a* as (a|)* or (|a)* depending on greedyness
+    # This way there will be room to create a similair structure later on when we modify the code, and most code will already be there
+    if opcode in {MAX_REPEAT, MIN_REPEAT}:
+        mintimes, maxtimes, torepeat = args
+        if mintimes != maxtimes: # check if this is not a fixed count loop
+            empty = sre_parse.SubPattern(torepeat.state)
+            newcode = sre_parse.SubPattern(torepeat.state)
+            if opcode is MAX_REPEAT:
+                newcode.append((BRANCH, (None, [torepeat, empty])))
+            else:
+                newcode.append((BRANCH, (None, [empty, torepeat])))
+            return [(opcode, (mintimes, maxtimes, newcode))]
+    return [(opcode, args)]
+
+def padd_loops(opcode,args):
+    # slightly anoying, but we will need more room in the code for loops to add counting opcodes so this adds a useless part to them that will get compiled into code and then written over by later processing again
+    
+    if opcode in {MAX_REPEAT, MIN_REPEAT}:
+        mintimes, maxtimes, torepeat = args
+        torepeat.data = [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]  +torepeat.data + [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]
     return [(opcode, args)]
 
 
@@ -138,6 +131,11 @@ opcode_size = {
     MIN_REPEAT_ONE: (2,0),
     ABS_REPEAT_ONE: (2,0),
     REPEAT: (2,1),
+    REPEAT_FIXED:(1,1), 
+    REPEAT_MIN_BOUNDED: (1,1), 
+    REPEAT_MAX_BOUNDED:(1,1), 
+    REPEAT_MIN_UNBOUNDED:(0,1), 
+    REPEAT_MAX_UNBOUNDED:(0,1), 
     "ANY":1,
     "ASSERT": (1,0),
     FAILURE: 1,
@@ -145,6 +143,8 @@ opcode_size = {
     CATEGORY: 2,
     "RANGE": 3,
     "JUMP": 2,
+    ABS_JUMP_IF_COUNTER: 3,
+    SET_COUNTER: 3,
     CHARSET: 9,
     NOP: 1,
     LS_BRANCH:2,
@@ -164,7 +164,7 @@ def apply_func_code(code,func,i=0,end=None,**funcargs):
             loc = i+1
             while not code[loc] is FAILURE:
                 newloc = loc + code[loc]
-                res += apply_func_code(code,func,loc+1,end=newloc,**funcargs)
+                res += apply_func_code(code,func,i=loc+1,end=newloc,**funcargs)
                 loc = newloc
             skip = loc+1-i              
         elif opcode is BIGCHARSET:
@@ -192,7 +192,7 @@ def apply_func_code(code,func,i=0,end=None,**funcargs):
                 args = code[i+2:i+startargs+2]+code[i+skip-endargs:i+skip]
                 substart = i+startargs+2
                 subend = i+skip-endargs
-                res += apply_func_code(code,func,substart,subend,**funcargs)                
+                res += apply_func_code(code,func,i=substart,end=subend,**funcargs)
         else:
             args = code[i+1:i+skip]
         locres = func(code,i,opcode,args,substart,subend,**funcargs)
@@ -201,26 +201,94 @@ def apply_func_code(code,func,i=0,end=None,**funcargs):
         i += skip
     return res
 
-def remove_repeats(code,i,opcode,args,substart,subend):
-    # Takes code compiled after replace_repeats has ben called on it
-    # changes repeats { (a|)* }into branches with anegative jump and without repeat
 
+def rename_repeats(code,i,opcode,args,substart,subend):
     if opcode is REPEAT:
-        repeat_type = args[2]
-        assert code[substart] is BRANCH
-        branch_skip = code[substart+1]  # skip of the first branch
-        if repeat_type is MAX_UNTIL:
-            # First of the two branches should be nonempty and end in a jump
-            assert code[substart+branch_skip-1] is JUMP
-            # modify argument to JUMP to point to the start of the repeat
-            code[substart+branch_skip] = -(branch_skip + 4)
+        minreps,maxreps,greedy = args
+        if minreps == maxreps:
+            code[i] = REPEAT_FIXED
+            # code[i+2] = minreps # already there
+        elif maxreps is MAXREPEAT:
+            #infinite loops
+            if greedy is MAX_UNTIL:
+                code[i] = REPEAT_MAX_UNBOUNDED
+                code[i+2] = NOP
+            else:
+                code[i] = REPEAT_MIN_UNBOUNDED
+                code[i+2] = NOP
         else:
-            # end of the repeat should be after end of second branch
-            assert code[subend-3] is JUMP
-            code[subend-2] = -((subend-2) - i)
-        code[i : i + 4] = [NOP] * 4
+            # bounded loops    
+            if greedy is MAX_UNTIL:
+                code[i] = REPEAT_MAX_BOUNDED
+                code[i+2] = maxreps
+            else:
+                code[i] = REPEAT_MIN_BOUNDED
+                code[i+2] = maxreps
+        code[i+3] = NOP
         code[subend] = NOP
+
+
+
+def rewrite_unbounded_repeats(code,i,opcode,args,substart,subend):
+    if opcode is REPEAT_MAX_UNBOUNDED:
+        code[i] = LS_BRANCH
+        code[i+1] = [subend+1]
+        code[i+2:i+8] = [NOP] *6 # we do not need space at start now
+        # use space created by the extra (AT,(AT_LOC_BOUNDARY)) at the end to jump back
+        code[subend-6:subend-2] = [NOP]*4
+        code[subend-2:subend] = (ABS_JUMP,i)        
+    elif opcode is REPEAT_MIN_UNBOUNDED:
+        code[i] = LS_BRANCH
+        code[i+1] = [i+4]
+        code[i+2] = ABS_JUMP
+        code[i+3] = subend+1
+        # we do not this  need space at start now
+        code[i+4:i+8] = [NOP] *4 
+        code[subend-6:subend-2] = [NOP]*4
+        code[subend-2:subend] = (ABS_JUMP,i)        
+
+def rewrite_fixed_repeats(code,i,opcode,args,substart,subend,loop_counter=None):
+    # changes repeats a{5} into a loop of negative conditional jumps
+    if opcode is REPEAT_FIXED:
+        reps = args[0]
+        counter = loop_counter[0]
+        loop_counter[0] +=1
+        code[i:i+3] = (SET_COUNTER,counter,reps)
+        code[i+4:i+8] = [NOP]*4
+        jumploc = i+3
+    
+        code[subend-6:subend-3] = (ABS_JUMP_IF_COUNTER,counter,i+3)
+        # When exiting we want to reset the counter to None
+        code[subend-3:subend] = (SET_COUNTER,counter,None)
+
         
+def rewrite_bounded_repeats(code,i,opcode,args,substart,subend,loop_counter=None):
+    if opcode is REPEAT_MAX_BOUNDED:
+        reps = args[0]
+        counter = loop_counter[0]
+        loop_counter[0] +=1
+        code[i:i+3] = (SET_COUNTER,counter,reps)
+        code[i+3] = LS_BRANCH
+        code[i+4] = [subend-3] # still need to stop the counterin this case
+        code[i+5:i+8] = [NOP] *3 # we do not need this space at start now
+        code[subend-6:subend-3] = (ABS_JUMP_IF_COUNTER,counter,i+3)
+        # When exiting we want to reset the counter to None
+        code[subend-3:subend] = (SET_COUNTER,counter,None)
+        
+    elif opcode is REPEAT_MIN_BOUNDED:
+        reps = args[0]
+        counter = loop_counter[0]
+        loop_counter[0] +=1
+        code[i:i+3] = (SET_COUNTER,counter,reps)
+        code[i+3] = LS_BRANCH
+        code[i+4] = [i+8]
+        code[i+5] = ABS_JUMP
+        code[i+6] = subend-3 # still need to reset counter
+        code[i+7] = NOP
+        code[subend-6:subend-3] = (ABS_JUMP_IF_COUNTER,counter,i+3)
+        # When exiting we want to reset the counter to None
+        code[subend-3:subend] = (SET_COUNTER,counter,None)
+
         
 
 def combine_literals(code,i,opcode,args,substart,subend):
@@ -266,10 +334,22 @@ def absolute_jump_locations(code,i,opcode,args,substart,subend):
         code[i] = ABS_REPEAT_ONE
         code[i+1] = i + reljump + 1
         return [code[i+1]]
+    elif opcode is ABS_JUMP:
+        return [code[i+1]]
+    elif opcode is LS_BRANCH:
+        return code[i+1]
+    elif opcode is ABS_JUMP_IF_COUNTER:
+        return [code[i+2]]
+    elif opcode is ABS_GROUPREF_EXISTS:
+        return [code[i+2]]
+    elif opcode is ABS_REPEAT_ONE:
+        return [code[i+1]]
 
 def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
     if opcode is ABS_JUMP:
         code[i + 1] = mapping[code[i + 1]]
+    if opcode is ABS_JUMP_IF_COUNTER:
+        code[i + 2] = mapping[code[i + 2]]
     elif opcode is LS_BRANCH:
         code[i + 1] = [mapping[v] for v in code[i + 1]]
     elif opcode is ABS_GROUPREF_EXISTS:

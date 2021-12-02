@@ -160,7 +160,7 @@ def literals_to_cond(code, i, flags=0):
 
 
 def part_to_py(part, partnum, flags=0, statemarks={}):
-    lines = [f"done.add((part,pos,smarks))"]
+    lines = [f"done.add((part,pos,smarks,loops))"]
     emit = lines.append
     oldi = 0
     i = 0
@@ -189,9 +189,9 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
             if len(to) > 1:
                 revlist = to[::-1]
                 emit(f"for target in {revlist}:")
-                emit("  stack.append((target,pos,marks,smarks))")
+                emit("  stack.append((target,pos,marks,smarks,loops))")
             else:
-                emit(f"stack.append(({to[0]},pos,marks,smarks))")
+                emit(f"stack.append(({to[0]},pos,marks,smarks,loops))")
             i += 1
         elif (
             "ANY" in str(opcode).split("_")
@@ -345,6 +345,7 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
             emit(f" part = {jumploc}")
             emit(" continue")
         elif opcode is ABS_REPEAT_ONE:
+            # handle REPEAT_ONE directly as we can easily loop localy
             nextpart, minrep,maxrep = part[i:i+3]
                         
             looplines = part_to_py(part[i+3:-1],0,flags=flags)
@@ -366,13 +367,25 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
                 else:
                     emit(f"for rep in range({maxrep-minrep}):")
                 # Now we may jump out of the loop if we can not get another itteration
-                emit(f" stack.append(({nextpart},pos,marks,smarks))")
+                emit(f" stack.append(({nextpart},pos,marks,smarks,loops))")
                 lines += indent(looplines,indent=1)
                 emit("else:")
                 emit(" correct = True")
                 emit("if not correct:")
                 emit_fail(indent=1)       
             i = len(part)
+        elif opcode is SET_COUNTER:
+            counter,value = part[i:i+2]
+            i+=2
+            emit(f"loops = loops[:{counter}]+ ({value},) +loops[{counter+1}:]")
+        elif opcode is ABS_JUMP_IF_COUNTER:
+            counter,target = part[i:i+2]
+            i+=2
+            # This is always after a loop, decrease the counter first as we already did one loop
+            emit(f"loops = loops[:{counter}]+ (loops[{counter}]-1,) +loops[{counter+1}:]")
+            emit(f"if loops[{counter}] > 0:")
+            emit(f" part = {target}")
+            emit(f" continue")
         else:
             if not isinstance(opcode,_NamedIntConstant):
                 raise ValueError(f"Wrong code {opcode}")
@@ -390,7 +403,7 @@ def indent(lines, indent=4):
 
 
 def parts_to_py(
-    parts, name="regexfunction", comment="", flags=0, marknum=0, statemarks={}
+        parts, name="regexfunction", comment="", flags=0, marknum=0, statemarks={}, loopnum = 0
 ):
     if flags & SRE_FLAG_LOCALE:
         raise NotImplementedError("Locale matching (L flag) is not supported")
@@ -406,12 +419,13 @@ def parts_to_py(
         #" done = set()",
         f" marks = (None,)*{marknum}",
         f" smarks = (None,)*{len(statemarks)}",
-        " stack = [(0,pos,marks,smarks)]",
+        f" loops = (None,)*{loopnum}",
+        " stack = [(0,pos,marks,smarks,loops)]",
         " while stack:",
-        "  part,pos,marks,smarks = stack.pop()",
-        "  while (part,pos,smarks) in done and stack:",
-        "   part,pos,marks,smarks = stack.pop()",
-        "  if (part,pos,smarks) in done:",
+        "  part,pos,marks,smarks,loops = stack.pop()",
+        "  while (part,pos,smarks,loops) in done and stack:",
+        "   part,pos,marks,smarks,loops = stack.pop()",
+        "  if (part,pos,smarks,loops) in done:",
         "   break",
         "",
         "  while True:",

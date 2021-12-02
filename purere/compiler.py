@@ -21,7 +21,7 @@ def code_to_parts(code,jump_locations):
     }  # this last one will eventually contain multiple jump per part as we remove unneeded parts
     
     parts = [code[a:b] for a, b in intervals]
-    
+        
     # now that we have the code blocks and a mapping of jumps we can remove all nops,but first combine literals as this creates more NOPS:
     for p in parts:
         apply_func_code(p,combine_literals)
@@ -64,6 +64,7 @@ def info_len(code):
 def parse_info(code, flags=0):
 
     code = code[1:]
+
     skip, infoflags, min, max = code[:4]
     if max == MAXREPEAT:
         max = "MAXREPEAT"
@@ -124,27 +125,40 @@ def get_all_args(opcodes, code):
 
 
 def compile_regex(regex, flags=0, name="regex"):
+    #flags |= SRE_FLAG_DEBUG
     if isinstance(regex, bytes):
         flags |= SRE_FLAG_BYTE_PATTERN
 
     # Use stdlib's sre_parse to create an AST
     parsed = sre_parse.parse(regex, flags)
     # We reshuffel loops to be easier to parse
-    parsed = apply_func_ast(parsed,replace_repeats)
-
+    parsed = apply_func_ast(parsed,split_repeats)
+    parsed = apply_func_ast(parsed,unroll_small) 
+    parsed = apply_func_ast(parsed,padd_loops)
+    #if len(str(parsed)) > 200 or "REPEAT" not in str(parsed): raise NotImplementedError("Skip for now")
+    for p in parsed:
+        print(p)
     # use stdlib's sre_compile to compile to VM code
     code = sre_compile._code(parsed, flags)
+
+
     # Handle the info block seperatly
     infolen = info_len(code)   
     info, code = code[:infolen], code[infolen:]
+    
     # finishe the reshuffeling of loop
-    apply_func_code(code,remove_repeats) 
-    # Transform all jumps into into absolute jumps
-    # Also save these absolute jumps for later
+    apply_func_code(code,rename_repeats)
+    apply_func_code(code,rewrite_unbounded_repeats)
+    # we pass a list so the functions can change its value globally
+    loop_counter = [0]
+    apply_func_code(code,rewrite_fixed_repeats,loop_counter=loop_counter)
+    apply_func_code(code,rewrite_bounded_repeats,loop_counter=loop_counter)
 
+    # Transform all jumps into into absolute jumps
+    # Also save these absolute jumps for later    
     jump_locations = sorted(list(set(
         apply_func_code(code,absolute_jump_locations))))
-    
+
     # parse the info
     info = parse_info(info, flags=flags)
     state = parsed.state
@@ -155,17 +169,18 @@ def compile_regex(regex, flags=0, name="regex"):
     # get the maximum mark number in the code, impotant for the python code generation
     allmarks = get_all_args({MARK}, code)
     maxmark = max(allmarks) if allmarks else -1
-
+    
     # Get all groups that are refrenced, their marks are important for the state of the backtracker and should be saved seperatly
     refrenced_groups = get_all_args({GROUPREF, GROUPREF_EXISTS}, code)
     # Mapping from actual MARK argument to the position in the state
     statemarks = {2 * i: 2 * j for j, i in enumerate(refrenced_groups)} | {
         2 * i + 1: 2 * j + 1 for j, i in enumerate(refrenced_groups)
     }
-   
+
     # splits the code into seperate parts
     parts = code_to_parts(code,jump_locations)
 
+    
     # pass of the work to topy.py to compile this into python code
     pycode = topy.parts_to_py(
         parts,
@@ -174,13 +189,14 @@ def compile_regex(regex, flags=0, name="regex"):
         flags=flags,
         marknum=maxmark + 1,
         statemarks=statemarks,
+        loopnum = loop_counter[0]
     )
     
     if flags & SRE_FLAG_DEBUG:
         print("---------------------- Main code ------------------------")
         for i, l in enumerate(pycode.split("\n")):
-            print(l)
-            #print(i + 1, l)
+            #print(l)
+            print(i + 1, l)
     #compile the python code
     res = {}
     exec(pycode, res)
