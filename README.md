@@ -17,7 +17,6 @@ Supported:
 
 Wish-list/known missing:
 - Look-back and look-ahead, i.e., the `ASSERT` and `ASSERT_NOT` opcodes.
-- Better repetition implementation. These are now implemented by rewriting the pattern so it only contains infinite loops. However, expressions like `a{2000,4000}` expand to a huge expression and can cause overflows. 
 - Ability to output standalone python code for a pattern that does not require `purere` to run
 
 Will never be implemented:
@@ -25,7 +24,7 @@ Will never be implemented:
 
 Known differences:
 - For Unicode patterns `\d` is defined using python's `isnumerical()`, which is not the same behavior as `re`. To get the original behavior `unicodedata` might be used as an optional dependency by passing the `purere.STRICTUNI` flag.
-- We now do not agree with `re` on how to set the groups in `((x|y)*)*` with inputstring `xyyzz`. Will be fixed in the furture after reimplementing repetitions.
+- We now do not agree with `re` on how to set the group boundaries in `((x|y)*)*` with input string `xyyzz`. Will be fixed in the furture.
 - Some implementation details:
   - Match objects are not cached and hence copying them gives back a different object
   - Buffers containing the bytes that are matched by `finditer` are not locked as pure python code can not do this. In general the behavior of `finditer` on a changing string is undefined and not tested.

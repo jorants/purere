@@ -72,7 +72,7 @@ def unroll_small(opcode,args):
                 # optional small repeat
                 # we could now unroll a{0,5} as a?a?a?a?a?, but that would be a bad plan
                 # this would casue a lot of backtracking, with all 2**5 combinations tried. Instead we use a series of branch operations: |a(|a(|a(|a(|a))))
-                # altough funcitonally the same as |a|aa|aaa|aaaa|aaaaa, it ensures we do not keep checking the same constantly.
+                # altough funcitonally the same as |a|aa|aaa|aaaa|aaaaa, it ensures we do not keep checking the same part of the string constantly for the same pattern.
                 # the order of branches matters for MIN/MAX
                 empty = sre_parse.SubPattern(torepeat.state)
                 newcode = []            
@@ -104,11 +104,12 @@ def branch_loops(opcode,args):
     return [(opcode, args)]
 
 def padd_loops(opcode,args):
-    # slightly anoying, but we will need more room in the code for loops to add counting opcodes so this adds a useless part to them that will get compiled into code and then written over by later processing again
-    
+    # slightly anoying, but we will need more room in the code for loops to add counting opcodes so this adds a useless part to them that will get compiled into code and then written over by later processing again    
     if opcode in {MAX_REPEAT, MIN_REPEAT}:
         mintimes, maxtimes, torepeat = args
-        torepeat.data = [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]  +torepeat.data + [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]
+        # Leave REPEAT_ONE alone
+        if not(sre_compile._simple(torepeat) and opcode is MAX_REPEAT):
+            torepeat.data = [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]  +torepeat.data + [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]
     return [(opcode, args)]
 
 
