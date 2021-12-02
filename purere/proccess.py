@@ -2,10 +2,12 @@
 Contians functions for the proccessing of the regex AST and regex VM code to put it into a form we like
 """
 
-import sre_compile
-import sre_parse
+from .stdlib import sre_compile
+from .stdlib import sre_parse
 
 from .constants import *
+
+
 
 def apply_func_ast(command_list,func):
     # Applies func recursivly to all nodes in AST

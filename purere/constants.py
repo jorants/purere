@@ -1,8 +1,5 @@
-from sre_constants import *
-from sre_constants import _NamedIntConstant
-
-# new opcode that should just be ignored, used to avoid offset errors wen replacing compiled code with something smaller
-last_opcode_int = int(OPCODES[-1])
+from .stdlib.sre_constants import *
+from .stdlib.sre_constants import _NamedIntConstant
 
 new_opcodes = """
 NOP

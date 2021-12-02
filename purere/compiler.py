@@ -1,9 +1,10 @@
 from .proccess import *
 from .constants import *
 from .constants import _NamedIntConstant
-from .dis import dis
 from . import topy
-import sre_parse,sre_compile
+
+from .stdlib import sre_parse
+from .stdlib import sre_compile
 
 
 
@@ -42,13 +43,17 @@ def code_to_parts(code,jump_locations):
             jump2parts[jn] = newpartnum
         parts2jump[newpartnum] += oldjumpnums
 
+
     # Now we have the new mappings set we are done with parts2jumps so we do not need to update it
     # give the parts a brand new name and create a mpapping of old part numbers to new ones
-    new_names = {oldname: i for i, oldname in enumerate(set(jump2parts.values()))}
+    # Make sure they stay in the same order
+    new_names = {oldname: i for i, oldname in enumerate(sorted(list(set(jump2parts.values()))))}
+
     # filter the parts for the ones we keep
     parts = [part for i, part in enumerate(parts) if i in new_names]
     # Change to the new names  for the jump lookup
     jump2parts = {j: new_names[p] for j, p in jump2parts.items()}
+
 
     # with the cleaning out of the way we can remap jumps and branches so the point at parts instead of codelins
     for p in parts:
@@ -171,14 +176,13 @@ def compile_regex(regex, flags=0, name="regex"):
     # Get all groups that are refrenced, their marks are important for the state of the backtracker and should be saved seperatly
     refrenced_groups = get_all_args({GROUPREF, GROUPREF_EXISTS}, code)
     # Mapping from actual MARK argument to the position in the state
-    statemarks = {2 * i: 2 * j for j, i in enumerate(refrenced_groups)} | {
-        2 * i + 1: 2 * j + 1 for j, i in enumerate(refrenced_groups)
-    }
+    statemarks = {2 * i: 2 * j for j, i in enumerate(refrenced_groups)}
+    statemarks.update({2 * i + 1: 2 * j + 1 for j, i in enumerate(refrenced_groups)})
+
 
     # splits the code into seperate parts
     parts = code_to_parts(code,jump_locations)
 
-    
     # pass of the work to topy.py to compile this into python code
     pycode = topy.parts_to_py(
         parts,

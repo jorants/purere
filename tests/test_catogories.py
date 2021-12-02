@@ -5,12 +5,10 @@ import sre_constants
 import _sre
 
 
-cats = [v for v in dir(sre_constants) if v.startswith("CATEGORY_")]
-
+cats = [v for v in dir(purere.constants) if v.startswith("CATEGORY_")]
 
 @pytest.mark.parametrize("catname", cats)
 def test_def_equal(catname):
-
     purere_constant = getattr(purere.constants, catname)
     # get a function that tests a character using out implementation
     try:

@@ -31,7 +31,7 @@ def get_category_condition(cat, val, flags=0):
     parts = str(cat).split("_")
     isunicode = "UNI" in parts
     negated = "NOT" in parts
-
+    
     if "WORD" in parts:
         base = f"({val}.isalnum() or {val} == {ctopy(95)})"  # 95 = '_'
     elif "SPACE" in parts and "UNI" not in parts:
@@ -416,7 +416,6 @@ def parts_to_py(
         " endpos = len(s) if endpos is None else min(endpos,len(s))",
         " if done == None:",
         "  done = set()",
-        #" done = set()",
         f" marks = (None,)*{marknum}",
         f" smarks = (None,)*{len(statemarks)}",
         f" loops = (None,)*{loopnum}",
@@ -430,7 +429,7 @@ def parts_to_py(
         "",
         "  while True:",
     ]
-
+    
     for i, part in enumerate(parts):
         codelines.append(f"   ")
         codelines.append(f"   if part == {i}:")

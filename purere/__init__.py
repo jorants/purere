@@ -2,7 +2,7 @@ from . import compiler
 from . import topy
 from . import constants
 # needed for template parsing
-import sre_parse
+from .stdlib import sre_parse
 
 # Used for groupindex to make it non-modifiable as required by some re tests, maybe just drop this and remove the test?
 try:

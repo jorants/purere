@@ -1882,7 +1882,6 @@ class ReTests(unittest.TestCase):
         self.assertEqual(re.findall(r"(?i)(a)\1", "aa \u0100"), ["a"])
         self.assertEqual(re.match(r"(?s).{1,3}", "\u0100\u0100").span(), (0, 2))
 
-    @pytest.mark.xfail
     def test_repeat_minmax_overflow(self):
         # Issue #13169
         string = "x" * 100000
