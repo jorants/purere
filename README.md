@@ -134,11 +134,9 @@ def regex(s, pos = 0, endpos = None, full = False):
  marks = (None,)*2
  stack = [(0,pos,marks)]
  while stack:
-  part,pos,marks,smarks = stack.pop()
-  while (part,pos) in done and stack:
-   part,pos,marks = stack.pop()
+  part,pos,marks = stack.pop()
   if (part,pos) in done:
-   break
+   continue
 
   while True:
    if part == 0:
