@@ -133,6 +133,7 @@ def regex(s, pos = 0, endpos = None, full = False):
  endpos = len(s) if endpos is None else min(endpos,len(s))
  marks = (None,)*2
  stack = [(0,pos,marks)]
+ done = set()
  while stack:
   part,pos,marks = stack.pop()
   if (part,pos) in done:
