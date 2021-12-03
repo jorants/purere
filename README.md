@@ -44,7 +44,7 @@ Will never be implemented:
 
 Known differences to `re`:
 - For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as cpython's `re`. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
-- We now do not agree with `re` on how to set the group boundaries in `((x|y)*)*` with input string `xyyzz`. Will be fixed in the furture.
+- We now do not agree with `re` on how to set the group boundaries in `((x|y)*)*` with input string `xyyzy`. Will be fixed in the furture.
 - Some minor implementation details:
   - Match objects are not cached and hence copying them gives back a different object, where cpython gives an exact copy for some reason.
   - Buffers containing the bytes that are matched by `finditer` are not locked as pure python code can not do this. In general the behavior of `finditer` on a changing string is undefined and not tested.
