@@ -420,6 +420,10 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
                 emit(f"if {offset} > pos: break")
 
             emit("assert_stack.append((pos,len(stack)))")
+            # Put a signal on the stack that if we reach this point then we have reached the end of an assert
+            # After this we just continue as normal, but the top  part of the assert_stack should be poped
+            emit(f"stack.append((None,None,None,None,None))")
+            
             if offset:
                 emit(f"pos -= {offset}")
                 
@@ -437,6 +441,8 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
 
             emit(f"assert_stack.append((pos,len(stack)))")
             emit(f"stack.append(({nextpart},pos,marks,smarks,loops))")
+            # Signal that the assert stack should be poped if we are successfull in not matching
+            emit(f"stack.append((None,None,None,None,None))")            
             if offset:
                 emit(f"pos -= {offset}")
 
@@ -481,11 +487,12 @@ def parts_to_py(
         " stack = [(0,pos,marks,smarks,loops)]",
         " while stack:",
         "  part,pos,marks,smarks,loops = stack.pop()",
-        "  while (part,pos,smarks,loops) in done and stack:",
-        "   part,pos,marks,smarks,loops = stack.pop()",
+        "  if part == None:",
+        "   assert_stack.pop()",
+        "   continue",
         "  if (part,pos,smarks,loops) in done:",
-        "   break",
-        "",
+        "   continue",
+        "  ",
         "  while True:",
     ]
     
