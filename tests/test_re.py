@@ -1988,16 +1988,14 @@ class ReTests(unittest.TestCase):
             [m.span() for m in re.finditer(r"\b|\w+", "a::bc")],
             [(0, 0), (0, 1), (1, 1), (3, 3), (3, 5), (5, 5)],
         )
-
+    
     def test_bug_2537(self):
         # issue 2537: empty submatches
+        res = True
         for outer_op in ("{0,}", "*", "+", "{1,187}"):
             for inner_op in ("{0,}", "*", "?"):
                 r = re.compile("^((x|y)%s)%s" % (inner_op, outer_op))
                 m = r.match("xyyzy")
-                print(inner_op, outer_op, m.group(0), m.groups())
-                print()
-                continue
                 self.assertEqual(m.group(0), "xyy")
                 self.assertEqual(m.group(1), "")
                 self.assertEqual(m.group(2), "y")

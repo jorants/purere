@@ -178,7 +178,11 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
     """
     Compiles the main code in a part. Returns a list.
     """
-    lines = [f"done.add((part,pos,smarks,loops))"]
+
+    lines = [
+        #"if (part,pos,smarks,loops) in done: break",
+        "done.add((part,pos,smarks,loops))",
+    ]
     emit = lines.append
     oldi = 0
     i = 0

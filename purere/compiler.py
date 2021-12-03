@@ -67,9 +67,7 @@ def info_len(code):
         return 0
                 
 def parse_info(code, flags=0):
-
     code = code[1:]
-
     skip, infoflags, min, max = code[:4]
     if max == MAXREPEAT:
         max = "MAXREPEAT"
@@ -141,6 +139,11 @@ def compile_regex(regex, flags=0, name="regex"):
     parsed = apply_func_ast(parsed,unroll_small) 
     parsed = apply_func_ast(parsed,padd_loops)
 
+    # this marks the groups that might match an empty string by negating their group number
+    # This is done so we can later add them to referenced_groups, and ensure that their bounderaies are kept track of.
+    # This way they are checked wether the can match an empty string
+    parsed = apply_func_ast(parsed,empty_groups)
+
     # use stdlib's sre_compile to compile to VM code
     code = sre_compile._code(parsed, flags)
 
@@ -162,6 +165,9 @@ def compile_regex(regex, flags=0, name="regex"):
     jump_locations = sorted(list(set(
         apply_func_code(code,absolute_jump_locations))))
 
+    # This gets the previously marked groups and undoes the marking 
+    empty_marks = apply_func_code(code,fix_negative_marks)
+    
     # parse the info
     info = parse_info(info, flags=flags)
     state = parsed.state
@@ -174,11 +180,12 @@ def compile_regex(regex, flags=0, name="regex"):
     maxmark = max(allmarks) if allmarks else -1
     
     # Get all groups that are refrenced, their marks are important for the state of the backtracker and should be saved seperatly
-    refrenced_groups = get_all_args({GROUPREF, GROUPREF_EXISTS}, code)
+    # Possible TODO: handle empty groups seperate as we only need to keep track of their empty/non-empty state, not the whole marks
+    refrenced_groups = get_all_args({GROUPREF, ABS_GROUPREF_EXISTS}, code)
+    tracked_groups = sorted(list(refrenced_groups | set(empty_marks)))
     # Mapping from actual MARK argument to the position in the state
-    statemarks = {2 * i: 2 * j for j, i in enumerate(refrenced_groups)}
-    statemarks.update({2 * i + 1: 2 * j + 1 for j, i in enumerate(refrenced_groups)})
-
+    statemarks = {2 * i: 2 * j for j, i in enumerate(tracked_groups)}
+    statemarks.update({2 * i + 1: 2 * j + 1 for j, i in enumerate(tracked_groups)})
 
     # splits the code into seperate parts
     parts = code_to_parts(code,jump_locations)

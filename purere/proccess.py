@@ -106,12 +106,26 @@ def branch_loops(opcode,args):
     return [(opcode, args)]
 
 def padd_loops(opcode,args):
-    # slightly anoying, but we will need more room in the code for loops to add counting opcodes so this adds a useless part to them that will get compiled into code and then written over by later processing again    
+    # slightly anoying, but we will need more room in the code for loops to add counting opcodes so this adds a useless part to them that will get compiled into code and then written over by later processing again
+    # We never use the LOC codes so we can use them safely here
+    # We also flag wether a loop can be an empty match using the first code 
     if opcode in {MAX_REPEAT, MIN_REPEAT}:
         mintimes, maxtimes, torepeat = args
         # Leave REPEAT_ONE alone
         if not(sre_compile._simple(torepeat) and opcode is MAX_REPEAT):
             torepeat.data = [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]  +torepeat.data + [(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY)),(AT,(AT_LOC_BOUNDARY))]
+
+    return [(opcode, args)]
+
+
+def empty_groups(opcode,args):
+    # negates the group numbers for groups that might be empty matches, as we want to keep track of those in the done set (i.e. smarks)
+    # we fix this change after compilation to VM code, but it is easier to check in the AST.
+    if opcode is SUBPATTERN:
+        group, add_flags, del_flags, p = args
+        if p.getwidth()[0] == 0:
+            # negate group number to signify that this group should be in smakrs later on
+            args = (-group, add_flags, del_flags, p)
     return [(opcode, args)]
 
 
@@ -361,4 +375,15 @@ def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
         code[i + 1] = mapping[code[i + 1]]
         
                 
-
+def fix_negative_marks(code,i,opcode,args,substrat,subend,mapping={}):
+    if opcode is MARK:
+        arg = code[i+1]
+        if arg < 0:
+            # undo the original caluclation that went wrong due to the negative
+            if (-arg) % 2 == 0:
+                group = -(arg//2 +1)
+                code[i+1] = (group - 1)*2
+            else:
+                group = -((arg-1)//2 +1)
+                code[i+1] = (group - 1)*2+1
+            return [code[i+1]]
