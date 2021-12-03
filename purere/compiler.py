@@ -144,6 +144,7 @@ def compile_regex(regex, flags=0, name="regex"):
     # This way they are checked wether the can match an empty string
     parsed = apply_func_ast(parsed,empty_groups)
 
+    
     # use stdlib's sre_compile to compile to VM code
     code = sre_compile._code(parsed, flags)
 
@@ -161,6 +162,8 @@ def compile_regex(regex, flags=0, name="regex"):
     apply_func_code(code,rewrite_bounded_repeats,loop_counter=loop_counter)
 
     apply_func_code(code,add_assert_ends)
+
+    apply_func_code(code,optimize_any)
     
     # Transform all jumps into into absolute jumps
     # Also save these absolute jumps for later    

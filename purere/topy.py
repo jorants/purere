@@ -216,7 +216,7 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
                 emit(f"stack.append(({to[0]},pos,marks,smarks,loops))")
             i += 1
         elif (
-            "ANY" in str(opcode).split("_")
+            "ANY" == str(opcode).split("_")[0]
             or "IN" in str(opcode).split("_")
             or "RANGE" in str(opcode).split("_")
             or "LITERAL" in str(opcode).split("_")
@@ -454,6 +454,46 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
             if opcode is ASSERT_FAILURE:
                 # at the end of a negative assert we imideatly break, as the branch we just jumped back to ahs now ended
                 emit("break")
+        elif opcode is ABS_REPEAT_ANY:
+            # Repetitions of the form .{a,b} where we want to match anything buut a new line
+            # These can be optmized with a simple find() if avalible
+            target,minrep,maxrep = part[i:i+3]
+            i+=3
+            ctopy = get_ctopy(flags)
+            emit("if hasattr(s,'find'):")
+            emit(f" first_nl = s.find({ctopy(10)},pos)")
+            emit(" first_nl = len(s) if first_nl == -1 else first_nl")
+            emit("else:")
+            emit(" try:") # we know it is a bytelike object as strings always have a find
+            emit(f"  first_nl = pos + next(i for i,c in enumerate(s[pos:]) if c==10)")
+            emit(" except StopIteration:")
+            emit(f"  first_nl = len(s)")
+
+            if minrep:             # Check wether this loop is possible at all
+                emit(f"if first_nl - pos < {minrep}: break")
+            if maxrep is not MAXREPEAT:
+                emit(f"loopend = min(first_nl,pos+{maxrep})")
+            else:
+                emit(f"loopend = first_nl")
+            emit(f"stack += [({target},newpos,marks,smarks,loops) for newpos in range(pos+{minrep},loopend+1)]")
+            emit("break")
+            
+
+        elif opcode is ABS_REPEAT_ANY_ALL:
+            # Repetitions of the form .{a,b} where we want to match anything
+            # Slightly simpler than above
+            target,minrep,maxrep = part[i:i+3]
+            i+=3
+            ctopy = get_ctopy(flags)
+            if minrep:             # Check wether this loop is possible at all
+                emit(f"if len(s) - pos < {minrep}: break")
+            if maxrep is not MAXREPEAT:
+                emit(f"loopend = min(len(s),pos+{maxrep})")
+            else:
+                emit(f"loopend = len(s)")
+            emit(f"stack += [({target},newpos,marks,smarks,loops) for newpos in range(pos+{minrep},loopend+1)]")
+            emit("break")
+
         else:
             if not isinstance(opcode,_NamedIntConstant):
                 raise ValueError(f"Wrong code {opcode}")

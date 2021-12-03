@@ -145,6 +145,8 @@ opcode_size = {
     "IN": (None,0), # we never need to go into a IN
     AT: 2,
     REPEAT_ONE: (2,0),
+    ABS_REPEAT_ANY: (2,0),
+    ABS_REPEAT_ANY_ALL: (2,0),
     MIN_REPEAT_ONE: (2,0),
     ABS_REPEAT_ONE: (2,0),
     REPEAT: (2,1),
@@ -198,6 +200,7 @@ def apply_func_code(code,func,i=0,end=None,**funcargs):
                 typename = next(p for p in parts if p in opcode_size)
                 skip = opcode_size[typename]
             except StopIteration as e:
+                for c in enumerate(code): print(*c)
                 raise ValueError(f"Specify {opcode}") from e
         else:
             skip = opcode_size[opcode]
@@ -360,35 +363,28 @@ def absolute_jump_locations(code,i,opcode,args,substart,subend):
         code[i] = ABS_REPEAT_ONE
         code[i+1] = i + reljump + 1
         return [code[i+1]]
-    elif opcode is ABS_JUMP:
-        return [code[i+1]]
     elif opcode is LS_BRANCH:
         return code[i+1]
     elif opcode is ABS_JUMP_IF_COUNTER:
         return [code[i+2]]
     elif opcode is ABS_GROUPREF_EXISTS:
         return [code[i+2]]
-    elif opcode is ABS_REPEAT_ONE:
+    elif "ABS_" in str(opcode):
         return [code[i+1]]
-    elif opcode is ABS_ASSERT_NOT:
-        return [code[i+1]]
+    
+def remap_jumps(code,i,opcode,args,substart,subend,mapping={}):
 
-def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
-    if opcode is ABS_JUMP:
-        code[i + 1] = mapping[code[i + 1]]
     if opcode is ABS_JUMP_IF_COUNTER:
+        code[i + 2] = mapping[code[i + 2]]
+    elif opcode is ABS_GROUPREF_EXISTS:
         code[i + 2] = mapping[code[i + 2]]
     elif opcode is LS_BRANCH:
         code[i + 1] = [mapping[v] for v in code[i + 1]]
-    elif opcode is ABS_GROUPREF_EXISTS:
-        code[i + 2] = mapping[code[i + 2]]
-    elif opcode is ABS_REPEAT_ONE:
-        code[i + 1] = mapping[code[i + 1]]
-    elif opcode is ABS_ASSERT_NOT:
+    elif "ABS_" in str(opcode):
         code[i + 1] = mapping[code[i + 1]]
         
                 
-def fix_negative_marks(code,i,opcode,args,substrat,subend,mapping={}):
+def fix_negative_marks(code,i,opcode,args,substart,subend,mapping={}):
     if opcode is MARK:
         arg = code[i+1]
         if arg < 0:
@@ -401,7 +397,7 @@ def fix_negative_marks(code,i,opcode,args,substrat,subend,mapping={}):
                 code[i+1] = (group - 1)*2+1
             return [code[i+1]]
 
-def add_assert_ends(code,i,opcode,args,substrat,subend,mapping={}):
+def add_assert_ends(code,i,opcode,args,substart,subend,mapping={}):
     if opcode is ASSERT:
         arg = code[i+1]
         code[i+arg] = ASSERT_SUCCESS
@@ -409,3 +405,12 @@ def add_assert_ends(code,i,opcode,args,substrat,subend,mapping={}):
         arg = code[i+1]
         code[i+arg] = ASSERT_FAILURE
         
+def optimize_any(code,i,opcode,args,substart,subend,mapping={}):
+    if opcode is REPEAT_ONE:
+        if code[substart] in {ANY,ANY_ALL}:
+            if code[substart] is ANY:
+                code[i] = ABS_REPEAT_ANY
+            else:
+                code[i] = ABS_REPEAT_ANY_ALL
+            code[i+1] = code[i+1] + i+1
+            code[i+4:subend] = (NOP,)*(subend-i-4)
