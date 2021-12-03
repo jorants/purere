@@ -154,7 +154,11 @@ opcode_size = {
     REPEAT_MIN_UNBOUNDED:(0,1), 
     REPEAT_MAX_UNBOUNDED:(0,1), 
     "ANY":1,
-    "ASSERT": (1,0),
+    ASSERT: (1,0),
+    ASSERT_NOT: (1,0),
+    ABS_ASSERT_NOT: (1,0),
+    ASSERT_SUCCESS: 1,
+    ASSERT_FAILURE: 1,
     FAILURE: 1,
     NEGATE: 1,
     CATEGORY: 2,
@@ -329,6 +333,11 @@ def absolute_jump_locations(code,i,opcode,args,substart,subend):
         code[i] = ABS_JUMP
         code[i + 1] = i + 1 + reljump
         return [code[i+1]]
+    if opcode is ASSERT_NOT:
+        reljump = code[i+1]
+        code[i] = ABS_ASSERT_NOT
+        code[i + 1] = i + 1 + reljump
+        return [code[i+1]]    
     elif opcode is BRANCH:
         loc = i+1
         locations = []
@@ -361,6 +370,8 @@ def absolute_jump_locations(code,i,opcode,args,substart,subend):
         return [code[i+2]]
     elif opcode is ABS_REPEAT_ONE:
         return [code[i+1]]
+    elif opcode is ABS_ASSERT_NOT:
+        return [code[i+1]]
 
 def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
     if opcode is ABS_JUMP:
@@ -372,6 +383,8 @@ def remap_jumps(code,i,opcode,args,substrat,subend,mapping={}):
     elif opcode is ABS_GROUPREF_EXISTS:
         code[i + 2] = mapping[code[i + 2]]
     elif opcode is ABS_REPEAT_ONE:
+        code[i + 1] = mapping[code[i + 1]]
+    elif opcode is ABS_ASSERT_NOT:
         code[i + 1] = mapping[code[i + 1]]
         
                 
@@ -387,3 +400,12 @@ def fix_negative_marks(code,i,opcode,args,substrat,subend,mapping={}):
                 group = -((arg-1)//2 +1)
                 code[i+1] = (group - 1)*2+1
             return [code[i+1]]
+
+def add_assert_ends(code,i,opcode,args,substrat,subend,mapping={}):
+    if opcode is ASSERT:
+        arg = code[i+1]
+        code[i+arg] = ASSERT_SUCCESS
+    elif opcode is ASSERT_NOT:
+        arg = code[i+1]
+        code[i+arg] = ASSERT_FAILURE
+        

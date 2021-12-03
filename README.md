@@ -34,9 +34,9 @@ Everything that `re` can do, appart from those things mentioned below, is suppor
 - Repetition using `*`, `+`, `?` and `{min,max}`, including non-greedy variants
 - All `AT` codes: `$` and `^`, `\A`, `\Z`, `\b`, `\B`
 - Non-capturing grouping using `(?:...)`, Capturing groups, group references, conditional matching depending on group ref (e.g. `(?(1)a|b)`) 
+- All types of asserts, also called look-ahead/look-behind.
 
 Wish-list/known missing:
-- Look-back and look-ahead, i.e., the `ASSERT` and `ASSERT_NOT` opcodes.
 - Ability to output standalone python code for a pattern that does not require `purere` to run
 
 Will never be implemented:

@@ -808,6 +808,7 @@ class ReTests(unittest.TestCase):
             p.groupindex["other"] = 0
         self.assertEqual(p.groupindex["other"], 2)
 
+    # modified to exclude locale flag
     def test_special_escapes(self):
         self.assertEqual(re.search(r"\b(b.)\b", "abcd abc bcd bx").group(1), "bx")
         self.assertEqual(re.search(r"\B(b.)\B", "abc bcd bc abxd").group(1), "bx")
@@ -822,12 +823,12 @@ class ReTests(unittest.TestCase):
         self.assertIsNone(re.search(r"^\Aabc\Z$", "\nabc\n", re.M))
         self.assertEqual(re.search(br"\b(b.)\b", b"abcd abc bcd bx").group(1), b"bx")
         self.assertEqual(re.search(br"\B(b.)\B", b"abc bcd bc abxd").group(1), b"bx")
-        self.assertEqual(
-            re.search(br"\b(b.)\b", b"abcd abc bcd bx", re.LOCALE).group(1), b"bx"
-        )
-        self.assertEqual(
-            re.search(br"\B(b.)\B", b"abc bcd bc abxd", re.LOCALE).group(1), b"bx"
-        )
+        # self.assertEqual(
+        #     re.search(br"\b(b.)\b", b"abcd abc bcd bx", re.LOCALE).group(1), b"bx"
+        # )
+        # self.assertEqual(
+        #     re.search(br"\B(b.)\B", b"abc bcd bc abxd", re.LOCALE).group(1), b"bx"
+        # )
         self.assertEqual(re.search(br"^abc$", b"\nabc\n", re.M).group(0), b"abc")
         self.assertEqual(re.search(br"^\Aabc\Z$", b"abc", re.M).group(0), b"abc")
         self.assertIsNone(re.search(br"^\Aabc\Z$", b"\nabc\n", re.M))
@@ -836,9 +837,9 @@ class ReTests(unittest.TestCase):
         self.assertEqual(
             re.search(r"\d\D\w\W\s\S", "1aa! a", re.ASCII).group(0), "1aa! a"
         )
-        self.assertEqual(
-            re.search(br"\d\D\w\W\s\S", b"1aa! a", re.LOCALE).group(0), b"1aa! a"
-        )
+        # self.assertEqual(
+        #     re.search(br"\d\D\w\W\s\S", b"1aa! a", re.LOCALE).group(0), b"1aa! a"
+        # )
 
     def test_other_escapes(self):
         self.checkPatternError("\\", "bad escape (end of pattern)", 0)
@@ -1714,6 +1715,8 @@ class ReTests(unittest.TestCase):
         self.assertRaises(ValueError, re.compile, r"(?a)\w", re.UNICODE)
         self.assertRaises(re.error, re.compile, r"(?au)\w")
 
+    # We do not support locale flags and will never do so
+    @cpython_only
     def test_locale_flag(self):
         enc = locale.getpreferredencoding()
         # Search non-ASCII letter
@@ -2079,6 +2082,7 @@ ELSE
         # with ignore case.
         self.assertEqual(re.fullmatch("[a-c]+", "ABC", re.I).span(), (0, 3))
 
+    @cpython_only
     def test_locale_caching(self):
         # Issue #22410
         oldlocale = locale.setlocale(locale.LC_CTYPE)
@@ -2115,6 +2119,7 @@ ELSE
         self.assertIsNone(re.match(b"(?Li)\xc5", b"\xe5"))
         self.assertIsNone(re.match(b"(?Li)\xe5", b"\xc5"))
 
+    @cpython_only
     def test_locale_compiled(self):
         oldlocale = locale.setlocale(locale.LC_CTYPE)
         self.addCleanup(locale.setlocale, locale.LC_CTYPE, oldlocale)
@@ -2352,6 +2357,7 @@ class PatternReprTests(unittest.TestCase):
             b"bytes pattern", re.A, "re.compile(b'bytes pattern', re.ASCII)"
         )
 
+    @cpython_only
     def test_locale(self):
         self.check_flags(
             b"bytes pattern", re.L, "re.compile(b'bytes pattern', re.LOCALE)"

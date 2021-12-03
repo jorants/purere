@@ -408,6 +408,46 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
             emit(f"if loops[{counter}] > 0:")
             emit(f" part = {target}")
             emit(f" continue")
+            
+        elif opcode is ASSERT:
+            # positive asserts are quite easy, we just save on a sperate stack the position we need to return to and the part of the stack that we had until here.
+            # If all parts fail then we automaticly get the next value on the stack before the assert
+            _,offset = part[i:i+2]
+            i+=2
+            
+            if offset:
+                # if there is no room then we fail directly
+                emit(f"if {offset} > pos: break")
+
+            emit("assert_stack.append((pos,len(stack)))")
+            if offset:
+                emit(f"pos -= {offset}")
+                
+        elif opcode is ABS_ASSERT_NOT:
+            # negative asserts mean that we want to jump to the end of the assert if all branches fail.
+            # i.e. we add this location to the stack
+            nextpart, offset = part[i:i+2]
+            i+=2
+            # If we reach the end of the assert state then we want to reset but than break
+            if offset:
+                # for negative asserts, if there is no room, just jump directly
+                emit(f"if {offset} > pos:")
+                emit(f" part = {nextpart}")
+                emit(" continue")
+
+            emit(f"assert_stack.append((pos,len(stack)))")
+            emit(f"stack.append(({nextpart},pos,marks,smarks,loops))")
+            if offset:
+                emit(f"pos -= {offset}")
+
+                
+        elif opcode in {ASSERT_SUCCESS,ASSERT_FAILURE}:
+            # At the end of an assert reset the stack and pos
+            emit("pos, oldlen = assert_stack.pop()")
+            emit(f"stack = stack[:oldlen]")
+            if opcode is ASSERT_FAILURE:
+                # at the end of a negative assert we imideatly break, as the branch we just jumped back to ahs now ended
+                emit("break")
         else:
             if not isinstance(opcode,_NamedIntConstant):
                 raise ValueError(f"Wrong code {opcode}")
@@ -437,6 +477,7 @@ def parts_to_py(
         f" marks = (None,)*{marknum}",
         f" smarks = (None,)*{len(statemarks)}",
         f" loops = (None,)*{loopnum}",
+        " assert_stack = []",
         " stack = [(0,pos,marks,smarks,loops)]",
         " while stack:",
         "  part,pos,marks,smarks,loops = stack.pop()",

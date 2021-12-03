@@ -160,6 +160,8 @@ def compile_regex(regex, flags=0, name="regex"):
     apply_func_code(code,rewrite_fixed_repeats,loop_counter=loop_counter)
     apply_func_code(code,rewrite_bounded_repeats,loop_counter=loop_counter)
 
+    apply_func_code(code,add_assert_ends)
+    
     # Transform all jumps into into absolute jumps
     # Also save these absolute jumps for later    
     jump_locations = sorted(list(set(

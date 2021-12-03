@@ -210,9 +210,13 @@ class Pattern:
                 string, i
             ):
                 continue
-            match,done = self._match(
-                string, pos=i, endpos=endpos, nonempty=nonempty_first and i == pos, done = done
+            nonempty = nonempty_first and i == pos
+            match,newdone = self._match(
+                string, pos=i, endpos=endpos, nonempty=nonempty, done = done
             )
+            if match or not nonempty:
+                # do not keep done is we forced non-empty and did not find anything, as we are fine with an emptry string in a later position but this might be excluded by done
+                done = newdone
             if match:
                 match.pos = pos
                 return match
