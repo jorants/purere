@@ -3,7 +3,7 @@ Purere
 
 Purere is a python regex library written fully in python. It compiles regex patterns into a python functions.
 
-This library is still in development, but it passes almost all tests from the CPython test set for `re` (only failing tests involving the few unimplemented parts).
+Purere passes all tests from the CPython test set for `re` (only skipping some tests involving implementation details).
 It also works with pypy3.
 
 ## Why?
@@ -27,7 +27,7 @@ import purere as re
 
 ## Development status
 
-Everything that `re` can do, appart from those things mentioned below, is supported, i.e.:
+Everything that `re` can do is supported appart from the `re.L` flag, i.e.:
 - ASCII, Unicode and byte-like strings
 - Ignore case mode `I`, multi-line mode `M`, and Dot-all mode `M`.
 - All character categories: `\d\D\s\S\w\W`. 
@@ -36,15 +36,17 @@ Everything that `re` can do, appart from those things mentioned below, is suppor
 - Non-capturing grouping using `(?:...)`, Capturing groups, group references, conditional matching depending on group ref (e.g. `(?(1)a|b)`) 
 - All types of asserts, also called look-ahead/look-behind.
 
-Wish-list/known missing:
+TODO:
 - Ability to output standalone python code for a pattern that does not require `purere` to run
+- Full independence from stdlib. Te only non optional dependence currently is `enum`, which is used for the flags. We might roll our own simpler funciton at some point.
 
 Will never be implemented:
 - The `L` locale flag. Usage is discouraged for `re` and we will not be implementing it. Full Unicode support is available and should be used.
 
-Known differences to `re`:
-- For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as CPython's `re`. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
-- Some minor implementation details:
+Known implementation differences to `re` regarding matching:
+- For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as CPython's `re`. THis means we match all nummerical unicode characters, while `re` is stricter. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
+
+Some minor implementation details that do not change matching behavior and that you will probably not notice every:
   - Match objects are not cached and hence copying them gives back a different object, where CPython gives an exact copy for some reason.
   - Buffers containing the bytes that are matched by `finditer` are not locked as pure python code can not do this. In general the behavior of `finditer` on a changing string is undefined and not tested.
   - If a compiled pattern is given to `purere.compile`, as well as flags, then no error is raised. Instead, the pattern is recompiled with the new flags if needed.
@@ -99,6 +101,13 @@ Smaller non-infinite loops (like `a{0,3}`) are unrolled, effectively using `part
 
 Loop counters are added to both the `stack` and to `done`.
 
+#### Look-ahead & look-behind
+
+Together known as `ASSERT` instructions, these form the big brother of `AT` instructions. They check for a match but then return to the original `pos` in the list. As these can possibly be nested we keep a seperate `assert_stack` of all currently active asserts containing the `pos` value that should be jumped back to after a successfull assert, and the length of the main `stack` before the assert started, so we can trow away any open branches of a finished assert.
+
+For positive asserts we simply pop the assert stack if the end is reached, set the old position back and reset the stack to its old value. If a possitive assert fails then at some point the last of its branches will be poped of the stack, after this the algorithm just contnues as normal and pops the branch that was on top of the stack before the assert started, which is exactly the behavior we want if the assert fails. The only bookkeeping here is to ass a marker to the `stack` that signals that the `assert_stack` should be poped as an assert ended.
+
+For negative asserts, i.e., we do not want to match here now, we need a bit more work, but not much. We simply push the position to go to after the assert did not match (which is a succesful-negative-assert) onto the stack, as then the assert failing brings us there automaticly. On the other hand, if we reach the end of the assert, then the assert did miatch, which is not what we want, so we pop the previous `stack` length of the `assert_stack` and jump back to the last branch before the assert started.
 
 Example result
 --------------
