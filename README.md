@@ -27,7 +27,7 @@ import purere as re
 
 ## Development status
 
-Supported:
+Everything that `re` can do, appart from those things mentioned below, is supported, i.e.:
 - ASCII, Unicode and byte-like strings
 - Ignore case mode `I`, multi-line mode `M`, and Dot-all mode `M`.
 - All character categories: `\d\D\s\S\w\W`. 
