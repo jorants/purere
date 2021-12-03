@@ -38,13 +38,13 @@ Everything that `re` can do is supported appart from the `re.L` flag, i.e.:
 
 TODO:
 - Ability to output standalone python code for a pattern that does not require `purere` to run
-- Full independence from stdlib. Te only non optional dependence currently is `enum`, which is used for the flags. We might roll our own simpler funciton at some point.
+- Full independence from stdlib. The only non optional dependence currently is `enum`, which is used for the flags. We might roll our own simpler funciton at some point.
 
 Will never be implemented:
 - The `L` locale flag. Usage is discouraged for `re` and we will not be implementing it. Full Unicode support is available and should be used.
 
 Known implementation differences to `re` regarding matching:
-- For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as CPython's `re`. THis means we match all nummerical unicode characters, while `re` is stricter. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
+- For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as CPython's `re`. This means we match all nummerical unicode characters, while `re` is stricter. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
 
 Some minor implementation details that do not change matching behavior and that you will probably not notice every:
   - Match objects are not cached and hence copying them gives back a different object, where CPython gives an exact copy for some reason.
@@ -75,7 +75,7 @@ if part == 1:
  part += 1
 ...
 ```
-This is then placed in a big `while True:` loop consisting of many `if part == <some part number>:` statements for the many parts. Some boiler plate code is added and the whole thing is compiled using `exec`. 
+This is then placed in a big `while True:` loop consisting of many `if part == <some part number>:` statements for the many parts. Some boiler plate code is added and the whole thing is compiled using `exec`. An example for a simple regex is given below.
 
 ### Runtime Overview 
 
