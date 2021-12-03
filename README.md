@@ -1,12 +1,32 @@
 Purere
 ======
 
-Purere is a python regex library written fully in python.
-It replaces the `_sre.c` part of the python SRE regex engine, while still using the `sre_*.py` parts of the library and having an interface compatible with `re`. Patterns are compiled to python code.
+Purere is a python regex library written fully in python. It compiles regex patterns into a python functions.
 
-This library is in early development, but it passes almost all tests from cpython for the parts that are there.
-The tests that do not pass all have to do with the TODOs below.
+This library is still in development, but it passes almost all tests from the cpython testset for `re` (only failing tests involving the few unimplemented parts).
+It also works with pypy3.
 
+Why?
+----
+Mostly curiosity. Building a regex engine is fun, and purere is actually quite fast for a pure python libary. On some rather evil inputs it even outpreforms other backtracking algorithms due to smarter caching (see the Design section below). 
+
+However, having a Python only version of the standard libary can be usefull when porting python to new platforms where we can not use a c compiler.  
+
+Usage
+-----
+
+Not in PyPi yet, but after cloning you may
+```
+pip install .
+```
+
+After which your code should work with the drop in replacement
+```
+import purere as re
+```
+
+Development status
+------------------
 Supported:
 - ASCII, Unicode and byte-like strings
 - Ignore case mode `I`, multiline mode `M`, and Dot-all mode `M`.
@@ -22,28 +42,17 @@ Wish-list/known missing:
 Will never be implemented:
 - The `L` locale flag. Usage is discouraged for `re` and we will not be implementing it. Full unicode support is avalible and sould be used.
 
-Known differences:
-- For Unicode patterns `\d` is defined using python's `isnumerical()`, which is not the same behavior as `re`. To get the original behavior `unicodedata` might be used as an optional dependency by passing the `purere.STRICTUNI` flag.
+Known differences to `re`:
+- For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as cpython's `re`. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
 - We now do not agree with `re` on how to set the group boundaries in `((x|y)*)*` with input string `xyyzz`. Will be fixed in the furture.
-- Some implementation details:
-  - Match objects are not cached and hence copying them gives back a different object
+- Some minor implementation details:
+  - Match objects are not cached and hence copying them gives back a different object, where cpython gives an exact copy for some reason.
   - Buffers containing the bytes that are matched by `finditer` are not locked as pure python code can not do this. In general the behavior of `finditer` on a changing string is undefined and not tested.
-  - If a compiled pattern is given to `purere.compile` as well as flags then no error is raised. Instead, the pattern is recompiled with the new flags if needed.
-  - Debug output now shows python code
+  - If a compiled pattern is given to `purere.compile`, as well as flags, then no error is raised. Instead, the pattern is recompiled with the new flags if needed.
+  - Debug output shows the generated python code.
 
 
-Usage
------
 
-Not in PyPi yet, but after cloning you may
-```
-pip install .
-```
-
-After which your code should work with the drop in replacement
-```
-import purere as re
-```
 
 Design
 ------
@@ -51,7 +60,7 @@ Design
 This library uses backtracking but takes inspiration from finite automata implementations to avoid exponential behavior on certain patterns.
 See also Russ Cox their great articles on regex https://swtch.com/~rsc/regexp/ and for a more detailed explanation of this problem.
 
-To avoid re-implementing the parsing of the pattern, the pure python parts of `sre` are reused. In particular, `sre_parse` parses the regex and `sre_compile` compiles it to instructions that would normally be fed to a virtual machine implemented by `_sre.c`. We leave this mostly intact but, slightly get in the middle to refactor the results to fit our needs. This refactoring is done in `proccess.py` 
+To avoid re-implementing the parsing of the pattern, the pure python parts of `sre` are reused. In particular, `sre_parse` parses the regex and `sre_compile` compiles it to instructions that would normally be fed to a virtual machine implemented by `_sre.c`. We leave this mostly intact but, slightly get in the middle to refactor the results to fit our needs. This refactoring is done in `proccess.py`. For consistency reasons, compatability with pypy, and to allow us to reimplement the few lines of code from `_sre.c` that are used in `sre_compile.py`, we include a copy of cpythons implementation for their files which have been kept mostly the same. Purere runs fine if the standard libary version is used in cpython.
 
 We do not implement a VM. Instead the resulting code is taken by `compiler.py`. This makes all jump locations absolute jumps and then splits the code into parts such that all jumps are to the beginning of a part. This allows us to number the parts and change the definition of the jumps once again so they reference part numbers. Here some more general parameters are determined as well, like the number of groups, the groups that are back-referenced, and any possible prefixes.
 
@@ -145,11 +154,27 @@ def regex(s, pos = 0, endpos = None, full = False):
 
 ```
 
+Benchmarking
+------------
+(Relative) speed will highly depend on the system, python version, and the benchmarks used.
+Some benchmarks are included and can be run with pytest to get a rough idea:
+```
+pytest tests/test_speed.py -rP
+```
+We get about a factor 10 slowdown in compilation when using CPython (compared to using `re`).
+As for matching time, it really depends on the input. We are particulairly slow in two cases:
+ - Matching single character repeats like `.*`.
+ - Matching huge texts with a regex that does not start with a string prefix (for example `[ab]cd` does not start with a string prefix, while `ab[cd]` starts with the prefix `ab`)
+
+Both cases are slower because searching long inputs with a loop in python can never beat a loop in C. 
+However, if the pattern always starts the same, then `find()` is used to only try an match at those positions where the pattern might be. For reasonable patterns the slowdown with CPython is mostly between 6 and 20 times.
+
+
 Development
 -----------
 
-Poetry is used for package management. Apart from that only pytest is needed to run the tests. 
-To install pytest and setup a virtual endowment run `poetry install`.
+Poetry is used for package management. Apart from that, only pytest is needed to run the tests and there are no runtime dependencies. 
+To install pytest and setup a virtual envoirment run `poetry install`.
 To run the tests run `poetry run pytest`.
 
 Name
