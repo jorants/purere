@@ -1,6 +1,9 @@
 from .constants import *
 from .constants import _NamedIntConstant
 
+def indent(lines, indent=4):
+    return [" " * indent + l for l in lines]
+
 def get_ctopy(flags=0):
     # ctopy converts a integer to the correspoinding python (bytes or str) representation
     if flags & SRE_FLAG_BYTE_PATTERN:
@@ -10,6 +13,7 @@ def get_ctopy(flags=0):
 
 
 def offset_str(offset):
+    # computes representation of an offset in string form so "x"+offset_str(offset) is the string for x+offset
     if offset == 0:
         return ""
     elif offset < 0:
@@ -19,14 +23,17 @@ def offset_str(offset):
 
 
 def get_val(offset=0, flags=0):
+    # For bytes we can get a byte by getting a substring of length 1
+    # For strings we can simply get the so many'th char
     if flags & SRE_FLAG_BYTE_PATTERN:
         val = f"s[pos{offset_str(offset)}:pos{offset_str(offset+1)}]"  # to get a bytes object back
-    else:
+    else:        
         val = f"s[pos{offset_str(offset)}]"
     return val
 
 
 def get_category_condition(cat, val, flags=0):
+    #For one of the buildin catogories this returns a string representing '{val} in category'
     ctopy = get_ctopy(flags)
     parts = str(cat).split("_")
     isunicode = "UNI" in parts
@@ -69,7 +76,15 @@ def get_category_condition(cat, val, flags=0):
 
 
 def literals_to_cond(code, i, flags=0):
-    # ctopy converts a integer to the correspoinding python (bytes or str) representation
+    """
+    This takes either an IN type block or one of the other opcodes that checks a character (at code[i])
+    It returns the following
+     - A list of statements that need to run before the checks
+     - A list of conditions that need to be in an 'or' together (i.e., parts of the IN statement)
+     - A boolean that represents negation of the whole statement
+     - The new i after the leterals
+    """
+
     ctopy = get_ctopy(flags)
     pre = []
     conditions = []
@@ -160,6 +175,9 @@ def literals_to_cond(code, i, flags=0):
 
 
 def part_to_py(part, partnum, flags=0, statemarks={}):
+    """
+    Compiles the main code in a part. Returns a list.
+    """
     lines = [f"done.add((part,pos,smarks,loops))"]
     emit = lines.append
     oldi = 0
@@ -393,13 +411,9 @@ def part_to_py(part, partnum, flags=0, statemarks={}):
         emit_comment()
 
     else:
-        # last command changed part so we do not have to
+        # last command did not change the part (otherwise it whould have quit the loop)
         emit("part += 1")
     return lines
-
-
-def indent(lines, indent=4):
-    return [" " * indent + l for l in lines]
 
 
 def parts_to_py(
