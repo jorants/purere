@@ -1,21 +1,19 @@
 from . import compiler
 from . import topy
 from . import constants
-# needed for template parsing
+
 from .stdlib import sre_parse
 
-# Used for groupindex to make it non-modifiable as required by some re tests, maybe just drop this and remove the test?
-try:
-    from types import MappingProxyType
-except ImportError:
-    # Require as little as possible from stdlib
-    class MappingProxyType(dict):
-        def __setattr__(self, *args):
-            raise TypeError("Not alowed to change")
 
+# Require as little as possible from stdlib, this is really all we need instead of using the full types
+class MappingProxyType(dict):
+    def __setitem__(self, *args):
+        raise TypeError("Not alowed to change")
+    def __delitem__(self, *args):
+        raise TypeError("Not alowed to change")
 
-__version__ = "0.0.1"
-
+    
+__version__ = "0.0.2"
 
 class Match:
     def __init__(self, pattern_info, arg_info, regs):
@@ -153,13 +151,17 @@ class _Scanner:
         return self._run(self.pattern._search)
 
 
-class Pattern:
-    def __init__(self, pattern, flags=0):
-        self.pattern = pattern
-        if not isinstance(flags, RegexFlag):
-            flags = RegexFlag(flags)
-        self._info, self._match_function = compiler.compile_regex(pattern, flags=flags)
-        self.flags = self._info["flags"]
+class Pattern:    
+    def __init__(self, info,func):
+        self._info = info
+        self._match_function = func
+        self.pattern = info['pattern']
+        self.flags = info['flags']
+        # self.pattern = pattern
+        # if not isinstance(flags, RegexFlag):
+        #     flags = RegexFlag(flags)
+        # self._info, self._match_function = compiler.compile_regex(pattern, flags=flags)
+        # self.flags = self._info["flags"]
         self.groups = self._info["groups"] - 1
         self.groupindex = MappingProxyType(self._info["groupdict"])
         self._basetype = str if isinstance(self.pattern, str) else bytes
@@ -345,6 +347,37 @@ class Pattern:
         return hash((self.pattern, self.flags))
 
 
+    
+
+def get_headers():
+    # returns the top of this file if possible, wihtout the imports.
+    # do not move this function
+    try:
+        assert False
+    except AssertionError as e:
+        assertline = e.__traceback__.tb_lineno
+
+    tillline = assertline - 5
+    lines = open(__file__,"r").read().splitlines()[:tillline]
+    code =  "\n".join(l for l in lines if 'import' not in l and "__version__" not in l)
+    code = code.replace("UNICODE",str(int(UNICODE)))
+    code = code.replace("BYTEPATTERN",str(int(BYTEPATTERN)))
+    return code
+
+def compile_to_py(pattern, flags=0, name="regex"):
+    info,code =  compiler.compile_regex(pattern, flags=flags,name=name+"_code",only_code = True)
+    if  info["prefix_checker"]:
+        code = info["prefix_checker"] + "\n\n" + code
+        # temporary value, we will replace later, just something that has a clear repr
+        info["prefix_checker"] = 12345678987654321
+    info['flags'] = int(info['flags'])
+    # we want the code for info to have a reference to the function
+    code += f"\n\n{name}_info = " + repr(info).replace("12345678987654321",f"prefix_{name}_code")
+    code += f"\n\n{name} = Pattern({name}_info, {name}_code)"
+    print(code)
+    return code
+
+    
 _cache = {}
 
 
@@ -356,7 +389,12 @@ def _compile(pattern, flags=0):
             pattern = pattern.pattern
     if (pattern, flags) in _cache:
         return _cache[(pattern, flags)]
-    res = Pattern(pattern, flags)
+    # not cached, actually compile
+    if not isinstance(flags, RegexFlag):
+         flags = RegexFlag(flags)
+    info, func  = compiler.compile_regex(pattern, flags=flags)
+    info['pattern'] = pattern
+    res = Pattern(info,func)
     _cache[(pattern, flags)] = res
     _cache[(pattern, res.flags)] = res
     return res
@@ -423,7 +461,7 @@ class RegexFlag(enum.IntFlag):
     # sre extensions (experimental, don't rely on these)
     TEMPLATE = T = constants.SRE_FLAG_TEMPLATE  # disable backtracking
     DEBUG = constants.SRE_FLAG_DEBUG  # dump pattern after compilation
-    # added flag
+    # added flags
     STRICTUNI = constants.SRE_FLAG_STRICT_UNICODE
     BYTEPATTERN = constants.SRE_FLAG_BYTE_PATTERN
 

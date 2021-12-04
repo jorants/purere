@@ -20,10 +20,12 @@ Not in PyPi yet, but after cloning you may
 pip install .
 ```
 
-After which your code should work with the drop in replacement
+After which your normal python code should work with the drop in replacement
 ```
 import purere as re
 ```
+
+If you want to generate python code that can be run standalone, you may use the functions `purere.get_headers()` and `purere.compile_to_py(pattern,flags=0,name='regex')`. The first of these should be included once in the generated python code and defines the classes for Pattern and Match. The second is called for each pattern that you want to compile to code. `pattern` and `flags` have the same meaning as normal. `name` is the name of the resulting pattern in the scope of the code. 
 
 ## Development status
 
@@ -37,7 +39,6 @@ Everything that `re` can do is supported appart from the `re.L` flag, i.e.:
 - All types of asserts, also called look-ahead/look-behind.
 
 TODO:
-- Ability to output standalone python code for a pattern that does not require `purere` to run
 - Full independence from stdlib. The only non optional dependence currently is `enum`, which is used for the flags. We might roll our own simpler funciton at some point.
 
 Will never be implemented:

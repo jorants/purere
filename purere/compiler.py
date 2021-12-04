@@ -66,7 +66,7 @@ def info_len(code):
     else:
         return 0
                 
-def parse_info(code, flags=0):
+def parse_info(code, flags=0, only_code = False, name = "checker"):
     code = code[1:]
     skip, infoflags, min, max = code[:4]
     if max == MAXREPEAT:
@@ -98,7 +98,7 @@ def parse_info(code, flags=0):
             pre = ["num = lambda x: x[0]"] + pre
         else:
             pre = ["num = ord"] + pre
-        codelines = ["def checkprefix(s,pos):"]
+        codelines = [f"def prefix_{name}(s,pos):"]
         codelines += topy.indent(pre, 1)
         codelines.append(f" return {' or '.join(conditions)}")
         pycode = "\n".join(codelines)
@@ -106,9 +106,12 @@ def parse_info(code, flags=0):
             print("---------------------- Prefix-Checker code ------------------------")
             for i, l in enumerate(pycode.split("\n")):
                 print(i + 1, l)
-        res = {}
-        exec(pycode, res)
-        checker = res["checkprefix"]
+        if only_code:
+            checker = pycode
+        else:
+            res = {}
+            exec(pycode, res)
+            checker = res[f"prefix_{name}"]
 
     return {
         "flags": flags,
@@ -127,7 +130,7 @@ def get_all_args(opcodes, code):
     return found
 
 
-def compile_regex(regex, flags=0, name="regex"):
+def compile_regex(regex, flags=0, name="regex", only_code = False):
     #flags |= SRE_FLAG_DEBUG
     if isinstance(regex, bytes):
         flags |= SRE_FLAG_BYTE_PATTERN
@@ -174,11 +177,12 @@ def compile_regex(regex, flags=0, name="regex"):
     empty_marks = apply_func_code(code,fix_negative_marks)
     
     # parse the info
-    info = parse_info(info, flags=flags)
+    info = parse_info(info, flags=flags, only_code = only_code, name = name)
     state = parsed.state
     info["groups"] = state.groups
     info["groupdict"] = state.groupdict
     info["flags"] |= state.flags
+    info["pattern"] = regex
 
     # get the maximum mark number in the code, impotant for the python code generation
     allmarks = get_all_args({MARK}, code)
@@ -211,6 +215,9 @@ def compile_regex(regex, flags=0, name="regex"):
         for i, l in enumerate(pycode.split("\n")):
             #print(l)
             print(i + 1, l)
+
+    if only_code:
+        return info,pycode
     #compile the python code
     res = {}
     exec(pycode, res)
