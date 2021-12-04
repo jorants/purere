@@ -38,11 +38,10 @@ Everything that `re` can do is supported appart from the `re.L` flag, i.e.:
 - Non-capturing grouping using `(?:...)`, Capturing groups, group references, conditional matching depending on group ref (e.g. `(?(1)a|b)`) 
 - All types of asserts, also called look-ahead/look-behind.
 
+The `L` locale flag will never be implemented. Usage is discouraged for `re` and we will not be implementing it. Full Unicode support is available and should be used.
+
 TODO:
 - Full independence from stdlib. The only non optional dependence currently is `enum`, which is used for the flags. We might roll our own simpler funciton at some point.
-
-Will never be implemented:
-- The `L` locale flag. Usage is discouraged for `re` and we will not be implementing it. Full Unicode support is available and should be used.
 
 Known implementation differences to `re` regarding matching:
 - For Unicode patterns we define `\d` using python's `isnumerical()`, which is not the same behavior as CPython's `re`. This means we match all nummerical unicode characters, while `re` is stricter. To get the original behavior there is an option  `purere.STRICTUNI` that can be passed, in this case `unicodedata` is used to define '\d'.
