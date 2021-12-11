@@ -123,7 +123,7 @@ def empty_groups(opcode,args):
     # we fix this change after compilation to VM code, but it is easier to check in the AST.
     if opcode is SUBPATTERN:
         group, add_flags, del_flags, p = args
-        if p.getwidth()[0] == 0:
+        if group != None and p.getwidth()[0] == 0:
             # negate group number to signify that this group should be in smakrs later on
             args = (-group, add_flags, del_flags, p)
     return [(opcode, args)]
