@@ -86,7 +86,10 @@ class _NamedIntConstant():
         return int(self)>other
     
     def __rmul__(self,other):
-        return int(self)*other
+        return int(self)*int(other)
+    
+    def __mul__(self,other):
+        return int(self)*int(other)
     
     def __repr__(self):
         return self.name

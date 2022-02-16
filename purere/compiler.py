@@ -155,6 +155,7 @@ def compile_regex(regex, flags=0, name="regex", only_code = False):
     # Handle the info block seperatly
     infolen = info_len(code)   
     info, code = code[:infolen], code[infolen:]
+
     
     # finishe the reshuffeling of loop
     apply_func_code(code,rename_repeats)
@@ -183,7 +184,7 @@ def compile_regex(regex, flags=0, name="regex", only_code = False):
     info["groupdict"] = state.groupdict
     info["flags"] |= state.flags
     info["pattern"] = regex
-
+    info["has_assert"] = ASSERT in code or ASSERT_NOT in code
     # get the maximum mark number in the code, impotant for the python code generation
     allmarks = get_all_args({MARK}, code)
     maxmark = max(allmarks) if allmarks else -1

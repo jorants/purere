@@ -129,9 +129,15 @@ class _Scanner:
     def _run(self, f):
         if self._fin:
             return
-        res = f(
+        res,done = f(
             self._string, self._curpos, self._endpos, nonempty_first=self._last_empty,done=self._done
         )
+        
+        if (not self.pattern._info["has_assert"]) and done:
+            # As parts of asserts can be used in mutiple matches, we can not easily cache a pattern with asserts in it
+            self._done = done
+
+            
         if res:
             # fix starting position
             res.pos = self._pos
@@ -178,7 +184,8 @@ class Pattern:
         elif not (self.flags & BYTEPATTERN) and not isinstance(s, str):
             raise TypeError("Can only match str types with string pattern")
 
-    def _match(self, string, pos=0, endpos=None, nonempty=False, full=False, done=None):
+    def _match(self, string, pos=0, endpos=None, nonempty=False, full=False, done=None,nonempty_first = None):
+        # last coordinate is a dummy
         if done:
             # remove old stuff we will never see to keep memory footprint reasonable
             done = {(a,b,c,d) for a,b,c,d in done if b>=pos}
@@ -221,8 +228,8 @@ class Pattern:
                 done = newdone
             if match:
                 match.pos = pos
-                return match
-        return None
+                return match,done
+        return None, done
 
     def _search_fixed_prefix(self, string, pos=0, endpos=None, nonempty_first=False,done=None):
         if not hasattr(string,"find") and self._basetype == bytes:
@@ -234,7 +241,7 @@ class Pattern:
         while True:
             loc = searchstring.find(prefix,curpos,endpos)
             if loc == -1:
-                return None
+                return None,done
 
             # We do not need nonempty_first as there is a fixed prefix here, so there is no posibility of being empty
             match,done = self._match(
@@ -242,11 +249,15 @@ class Pattern:
             )
             if match:
                 match.pos = pos
-                return match
+                return match,done
             else:
                 curpos = loc+1
 
     def _search(self, string, pos=0, endpos=None, nonempty_first=False,done=None):
+        if done:
+            # remove old stuff we will never see to keep memory footprint reasonable
+            # Due to wierdness at the start with empty strings we also remove the current position
+            done = {(a,b,c,d) for a,b,c,d in done if b>pos}
         if self._info["fixed_prefix"]:
             return self._search_fixed_prefix(string,pos=pos,endpos=endpos,nonempty_first=nonempty_first,done=done)
         else:
@@ -254,7 +265,7 @@ class Pattern:
 
     def search(self, string, pos=0, endpos=None):
         self._check_type(string)
-        return self._search(string, pos=pos, endpos=endpos)
+        return self._search(string, pos=pos, endpos=endpos)[0]
 
     def match(self, string, pos=0, endpos=None):
         self._check_type(string)
